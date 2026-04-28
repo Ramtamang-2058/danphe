@@ -1,3 +1,6 @@
 venv
 debug.png
 debug2.png
+.idea
+_pycache__/
+__pycache__/
