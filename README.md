@@ -1,20 +1,19 @@
 # 🦚 danphe
 
-> Browser automation for Instagram & WhatsApp — named after Nepal's national bird, the Himalayan Monal.
+> Browser automation · Playwright · Python
 
-![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue)
-![Playwright](https://img.shields.io/badge/Playwright-Firefox-orange)
+![Python](https://img.shields.io/badge/Python-3.10+-green) ![Playwright](https://img.shields.io/badge/Playwright-Firefox-blue) ![Platform](https://img.shields.io/badge/Platform-Instagram%20%7C%20WhatsApp-orange)
 
-No tokens. No APIs. Just a real browser doing what you'd do.
+Named after Nepal's national bird — the **Himalayan Monal** — danphe automates messaging across Instagram and WhatsApp using persistent browser sessions. No tokens, no APIs, just a real browser doing what you'd do.
 
 ---
 
-## Features
+## Scripts
 
-- Send Instagram DMs via profile page or inbox
-- Send WhatsApp messages via WhatsApp Web
-- Persistent browser sessions — log in once, reuse forever
-- Auto debug screenshots on failure (`debug.png`, `debug2.png`)
+| Script | Platform | Description |
+|---|---|---|
+| `send_dm.py` | Instagram | Single-target DM via profile page or DM inbox with session persistence |
+| `msg.py` | Instagram · WhatsApp | Unified CLI for multi-platform messaging in one command |
 
 ---
 
@@ -36,21 +35,14 @@ playwright install firefox
 
 ## Usage
 
-### Unified CLI (`msg.py`)
-
 ```bash
-# Instagram DM
+# instagram DM
 python3 msg.py instagram its_ramtamang "Hey!"
 
-# WhatsApp message
+# whatsapp message
 python3 msg.py whatsapp "Ram Tamang" "Hey!"
-```
 
-### Single Instagram script (`send_dm.py`)
-
-Edit `TARGET_USER` and `MESSAGE` at the top of the file, then:
-
-```bash
+# single instagram script
 python3 send_dm.py
 ```
 
@@ -59,9 +51,9 @@ python3 send_dm.py
 ## First Run
 
 1. A Firefox window opens automatically
-2. Log in manually in the browser window
-3. Press `ENTER` in the terminal when done
-4. Session is saved to `browser_data/` — subsequent runs skip login
+2. Log in manually — session is saved to `browser_data/`
+3. Press `ENTER` in the terminal when logged in
+4. Subsequent runs skip login entirely
 
 ---
 
@@ -69,13 +61,12 @@ python3 send_dm.py
 
 ```
 danphe/
-├── msg.py                   # Unified CLI — Instagram + WhatsApp
-├── send_dm.py               # Instagram-only standalone script
+├── msg.py                   # Unified CLI entrypoint
+├── send_dm.py               # Instagram-only script
 ├── requirements.txt         # Python dependencies
-├── browser_data/            # Persistent Instagram session (auto-created)
-├── browser_data_whatsapp/   # Persistent WhatsApp session (auto-created)
-├── debug.png                # Auto screenshot on search step failure
-└── debug2.png               # Auto screenshot on message step failure
+├── browser_data/            # Instagram session (auto-created)
+├── browser_data_whatsapp/   # WhatsApp session (auto-created)
+└── debug*.png               # Auto screenshots on error
 ```
 
 ---
@@ -86,32 +77,20 @@ danphe/
 playwright
 ```
 
-Generate `requirements.txt`:
+Generate `requirements.txt` with:
 
 ```bash
 pip freeze > requirements.txt
-```
-
-Or minimal:
-
-```bash
-echo "playwright" > requirements.txt
 ```
 
 ---
 
 ## Notes
 
-- Uses **Firefox** with persistent context — sessions survive restarts
+- Sessions persist across runs — no repeated logins
+- `debug.png` and `debug2.png` are saved automatically when something goes wrong
 - WhatsApp requires QR scan on first run
-- Instagram may show a "suspicious login" prompt — confirm it in the browser
-- `debug.png` / `debug2.png` are saved automatically when something goes wrong — check them first before debugging
-
----
-
-## Disclaimer
-
-This tool is for personal use only. Automating messages may violate Instagram's and WhatsApp's Terms of Service. Use responsibly.
+- Instagram may prompt re-login if session expires
 
 ---
 
