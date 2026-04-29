@@ -1,0 +1,6 @@
+claude-automate
+danphe
+instra-automate
+plugins
+tools
+venv
