@@ -3,15 +3,17 @@ llm/nvidia.py — NVIDIA NIM streaming client (OpenAI-compatible endpoint).
 Model IDs taken directly from NVIDIA's sample code at build.nvidia.com.
 """
 from __future__ import annotations
+import json
 from typing import Iterator
+
 from openai import OpenAI
+
 from danphe.config import NVIDIA_API_KEY, MAX_TOKENS, DEBUG
 
-# Exact model IDs from NVIDIA's own sample snippets
 MODELS = {
-    "fast":      "z-ai/glm-5.1",                        # GLM-5.1, agentic, tool-calling, thinking
-    "long":      "deepseek-ai/deepseek-v3-0324",         # DeepSeek V3, long context, coding
-    "reasoning": "nvidia/nemotron-3-super-120b-a12b",    # Nemotron, heavy reasoning
+    "fast":      "z-ai/glm4.7",                      # GLM-4.7: agentic, tool-calling, thinking
+    "long":      "deepseek-ai/deepseek-v3-0324",      # DeepSeek V3: 1M ctx, coding
+    "reasoning": "nvidia/nemotron-3-super-120b-a12b", # Nemotron: heavy reasoning
 }
 
 _client: OpenAI | None = None
@@ -21,13 +23,36 @@ def _get_client() -> OpenAI:
     global _client
     if _client is None:
         if not NVIDIA_API_KEY:
-            raise ValueError("NVIDIA_API_KEY not set. Add it to .env")
+            raise ValueError("NVIDIA_API_KEY not set — add it to .env")
         _client = OpenAI(
             base_url="https://integrate.api.nvidia.com/v1",
             api_key=NVIDIA_API_KEY,
         )
     return _client
 
+
+def _build_messages(messages: list[dict], system: str) -> list[dict]:
+    """Prepend system message if not already present."""
+    if not system:
+        return messages
+    if any(m.get("role") == "system" for m in messages):
+        return messages
+    return [{"role": "system", "content": system}] + messages
+
+
+def _thinking_body(tier: str) -> dict | None:
+    """Return extra_body for thinking mode, or None."""
+    if tier in ("fast", "reasoning"):
+        return {
+            "chat_template_kwargs": {
+                "enable_thinking": True,
+                "clear_thinking": False,
+            }
+        }
+    return None
+
+
+# ── Streaming text (no tool calling) ──────────────────────────────────────────
 
 def stream(
     messages: list[dict],
@@ -36,49 +61,36 @@ def stream(
 ) -> Iterator[str]:
     """
     Stream text tokens from NVIDIA NIM.
-    Yields string chunks as they arrive (reasoning tokens skipped).
-    model_tier: "fast" | "long" | "reasoning"
+    Yields string chunks (reasoning tokens skipped unless DEBUG=1).
     """
     client = _get_client()
-    model  = MODELS.get(model_tier, MODELS["fast"])
-
-    # Build message list — never duplicate system role
-    all_messages: list[dict] = []
-    has_system = any(m.get("role") == "system" for m in messages)
-    if system and not has_system:
-        all_messages.append({"role": "system", "content": system})
-    all_messages.extend(messages)
+    model = MODELS.get(model_tier, MODELS["fast"])
+    all_messages = _build_messages(messages, system)
 
     if DEBUG:
         print(f"[danphe debug] model={model} msgs={len(all_messages)}")
 
-    # GLM-5.1 and nemotron support thinking mode
-    enable_thinking = model_tier in ("fast", "reasoning")
-    extra_body = {
-        "chat_template_kwargs": {
-            "enable_thinking": enable_thinking,
-            "clear_thinking": False,
-        }
-    }
-
-    completion = client.chat.completions.create(
+    kwargs: dict = dict(
         model=model,
         messages=all_messages,
         temperature=1,
         top_p=1,
         max_tokens=MAX_TOKENS,
         stream=True,
-        extra_body=extra_body,
     )
+    thinking_body = _thinking_body(model_tier)
+    if thinking_body:
+        kwargs["extra_body"] = thinking_body
+
+    completion = client.chat.completions.create(**kwargs)
 
     for chunk in completion:
-        if not getattr(chunk, "choices", None):
-            continue
-        if not chunk.choices or getattr(chunk.choices[0], "delta", None) is None:
+        if not getattr(chunk, "choices", None) or not chunk.choices:
             continue
         delta = chunk.choices[0].delta
+        if delta is None:
+            continue
 
-        # Show reasoning in dim gray if DEBUG=1, otherwise skip silently
         reasoning = getattr(delta, "reasoning_content", None)
         if reasoning and DEBUG:
             print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
@@ -92,5 +104,106 @@ def complete(
     model_tier: str = "fast",
     system: str = "",
 ) -> str:
-    """Non-streaming version. Returns full response string."""
+    """Non-streaming — returns full response string."""
     return "".join(stream(messages, model_tier=model_tier, system=system))
+
+
+# ── Streaming with tool calling ────────────────────────────────────────────────
+
+def stream_with_tools(
+    messages: list[dict],
+    model_tier: str = "fast",
+    system: str = "",
+    tools: list[dict] | None = None,
+) -> Iterator[tuple[str, object]]:
+    """
+    Stream response with optional tool calling.
+
+    Yields:
+      ("text",      str)               — text chunk to display live
+      ("tool_call", dict)              — completed tool call after stream ends
+          dict keys: id, name, args (parsed dict)
+
+    Falls back to plain streaming (no tools) if the API rejects tool params.
+    """
+    client = _get_client()
+    model = MODELS.get(model_tier, MODELS["fast"])
+    all_messages = _build_messages(messages, system)
+
+    if DEBUG:
+        print(f"[danphe debug] model={model} tools={bool(tools)} msgs={len(all_messages)}")
+
+    kwargs: dict = dict(
+        model=model,
+        messages=all_messages,
+        temperature=1,
+        top_p=1,
+        max_tokens=MAX_TOKENS,
+        stream=True,
+    )
+
+    if tools:
+        kwargs["tools"] = tools
+        kwargs["tool_choice"] = "auto"
+    else:
+        thinking_body = _thinking_body(model_tier)
+        if thinking_body:
+            kwargs["extra_body"] = thinking_body
+
+    # Try with tools; on failure fall back to plain stream
+    try:
+        completion = client.chat.completions.create(**kwargs)
+    except Exception as e:
+        err = str(e).lower()
+        if tools and ("tool" in err or "function" in err or "unsupported" in err):
+            # Model doesn't support tool calling — strip tools and retry
+            kwargs.pop("tools", None)
+            kwargs.pop("tool_choice", None)
+            thinking_body = _thinking_body(model_tier)
+            if thinking_body:
+                kwargs["extra_body"] = thinking_body
+            completion = client.chat.completions.create(**kwargs)
+        else:
+            raise
+
+    accumulated: dict[int, dict] = {}
+
+    for chunk in completion:
+        if not getattr(chunk, "choices", None) or not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta
+        if delta is None:
+            continue
+
+        # Reasoning tokens (thinking mode)
+        reasoning = getattr(delta, "reasoning_content", None)
+        if reasoning and DEBUG:
+            print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
+
+        # Text content — yield immediately for live streaming
+        if getattr(delta, "content", None):
+            yield ("text", delta.content)
+
+        # Tool call deltas — accumulate across chunks
+        if getattr(delta, "tool_calls", None):
+            for tc in delta.tool_calls:
+                idx = tc.index
+                if idx not in accumulated:
+                    accumulated[idx] = {"id": "", "name": "", "args": ""}
+                if getattr(tc, "id", None):
+                    accumulated[idx]["id"] = tc.id
+                fn = getattr(tc, "function", None)
+                if fn:
+                    if getattr(fn, "name", None):
+                        accumulated[idx]["name"] = fn.name
+                    if getattr(fn, "arguments", None):
+                        accumulated[idx]["args"] += fn.arguments
+
+    # Emit completed tool calls after the stream finishes
+    for idx in sorted(accumulated.keys()):
+        tc = accumulated[idx]
+        try:
+            args = json.loads(tc["args"]) if tc["args"].strip() else {}
+        except json.JSONDecodeError:
+            args = {"_raw": tc["args"]}
+        yield ("tool_call", {"id": tc["id"], "name": tc["name"], "args": args})
