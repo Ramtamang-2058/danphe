@@ -8,3 +8,7 @@ __pycache__/
 cache2/
 storage/
 sessionstore-backups/
+instra-automate/browser_data/
+*.log
+*.sqlite
+*.db

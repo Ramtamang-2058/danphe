@@ -1,0 +1,24 @@
+"""
+Social media automation - requirements for danphe social features.
+Install with: pip install -r social_requirements.txt
+
+Or individual tools:
+  pip install playwright      # for browser automation
+  pip install python-dotenv   # for .env loading (usually already installed)
+  pip install openai          # for NVIDIA NIM API (usually already installed)
+"""
+
+# Browser automation
+playwright==1.40.0
+
+# Already in danphe but including for clarity
+openai>=1.0.0
+python-dotenv>=1.0.0
+rich>=13.0.0
+
+# Optional: for telegram support (if implementing later)
+telethon==1.30.0
+
+# Optional: for advanced logging
+loguru==0.7.2
+

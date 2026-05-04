@@ -4,6 +4,7 @@ cli.py — danphe interactive REPL + Click entry point.
   danphe                     # interactive REPL (default)
   danphe ask "question"      # single Q&A, streamed
   danphe run "task"          # agentic task
+  danphe social instagram @user --auto-reply  # social media automation
   danphe models              # show model routing
 
 REPL slash commands:
@@ -602,6 +603,46 @@ def models() -> None:
     if not config.GEMINI_API_KEY:
         console.print("[yellow]  ⚠  GEMINI_API_KEY not set[/yellow]")
     console.print()
+
+
+@main.command()
+@click.argument("platform", type=click.Choice(["instagram", "whatsapp"]))
+@click.argument("target")
+@click.option("--auto-reply", is_flag=True, help="Automatically generate and send replies")
+@click.option("--personality", default="", help="Personality style for replies")
+def social(platform: str, target: str, auto_reply: bool, personality: str) -> None:
+    """Social media automation — read conversations and auto-reply."""
+    import asyncio
+    import sys
+    from pathlib import Path
+
+    # Import the social media module
+    project_root = Path(__file__).parent.parent
+    social_script = project_root / "instra-automate" / "social_media.py"
+    
+    if not social_script.exists():
+        console.print("[red]Social media automation script not found.[/red]")
+        return
+
+    # Build arguments for the script
+    args = [sys.executable, str(social_script), platform, target]
+    if auto_reply:
+        args.append("--auto-reply")
+    if personality:
+        args.extend(["--personality", personality])
+
+    console.print(f"  [cyan]Launching social media automation for {platform} with {target}[/cyan]")
+    if auto_reply:
+        console.print("  [dim]Auto-reply enabled[/dim]")
+    if personality:
+        console.print(f"  [dim]Personality: {personality}[/dim]")
+    console.print()
+
+    # Run the script
+    import subprocess
+    result = subprocess.run(args, cwd=str(social_script.parent))
+    if result.returncode != 0:
+        console.print(f"[red]Command failed with exit code {result.returncode}[/red]")
 
 
 if __name__ == "__main__":
