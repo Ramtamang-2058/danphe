@@ -270,7 +270,7 @@ def _cmd_help() -> None:
             "  [cyan]/model[/cyan]         Show current model routing\n"
             "  [cyan]/cost[/cyan]          Estimate token usage\n"
             "  [cyan]/add [dim]<path>[/dim][/cyan]     Add a file to context\n"
-            "  [cyan]/instagram[/cyan]     Send Instagram/WhatsApp message (interactive prompts)\n"
+            "  [cyan]/instagram[/cyan]     Send Instagram message (username or display name)\n"
             "  [cyan]/exit[/cyan]          Exit (also Ctrl+D)\n\n"
             "[bold]Available tools[/bold]\n"
             "  [cyan]read_file, write_file, run_bash, list_files, search_code[/cyan]\n"
@@ -387,7 +387,7 @@ def _cmd_add(args: list[str], session: list[dict]) -> None:
 
 
 def _cmd_instagram() -> None:
-    """Launch the Instagram/WhatsApp automation."""
+    """Launch the Instagram messaging automation."""
     project_root = Path(__file__).parent.parent
     candidates = [
         project_root / "instra-automate" / "msg.py",
@@ -398,24 +398,17 @@ def _cmd_instagram() -> None:
         console.print("[red]Instagram automation not found in instra-automate/[/red]")
         return
 
-    # Prompt for platform, target, and message
+    # Since command is /instagram, assume Instagram platform
+    platform = "instagram"
+
+    # Prompt for username and message
     try:
-        platform = input("Platform (instagram/whatsapp): ").strip().lower()
-        if platform not in ["instagram", "whatsapp"]:
-            console.print("[red]Invalid platform. Choose 'instagram' or 'whatsapp'.[/red]")
+        username = input("Instagram username or display name to message: ").strip()
+        if not username:
+            console.print("[red]Username cannot be empty.[/red]")
             return
 
-        if platform == "instagram":
-            target_prompt = "Instagram username: "
-        else:
-            target_prompt = "WhatsApp contact name: "
-
-        target = input(target_prompt).strip()
-        if not target:
-            console.print("[red]Target cannot be empty.[/red]")
-            return
-
-        message = input("Message: ").strip()
+        message = input("Message to send: ").strip()
         if not message:
             console.print("[red]Message cannot be empty.[/red]")
             return
@@ -425,8 +418,8 @@ def _cmd_instagram() -> None:
         return
 
     import subprocess
-    console.print(f"  [cyan]Launching[/cyan] [dim]{script}[/dim] with {platform} {target} '{message}'\n")
-    subprocess.run([sys.executable, str(script), platform, target, message], cwd=str(script.parent))
+    console.print(f"  [cyan]Launching[/cyan] [dim]{script}[/dim] with Instagram message to '{username}'\n")
+    subprocess.run([sys.executable, str(script), platform, username, message], cwd=str(script.parent))
 
 
 # ── Main REPL ──────────────────────────────────────────────────────────────────
