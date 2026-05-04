@@ -1,16 +1,16 @@
 11
-5
+8
 0
 -1
 
 https://www.instagram.com/
-https://www.instagram.com/www-service-worker.js?s=push&__d=www&enableAddToHomeScreen=false&zenon_device_id=6c1c3e30-e5ec-451a-a187-44effd85053b
+https://www.instagram.com/www-service-worker.js?s=push&__d=www&enableAddToHomeScreen=false&zenon_device_id=1a361881-39be-4e33-b1fc-67f46163264c
 false
-{66229514-3e17-4cf9-bca0-abf358a0d92b}
+{7b893c53-13c3-40fb-b733-0e6eaec356b1}
 1
-1777290345507055
-1777290345509387
-1777290344642699
+1777894223903378
+1777894223939018
+1777894223533077
 0
 true
 0

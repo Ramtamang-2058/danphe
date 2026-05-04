@@ -5,3 +5,6 @@ debug2.png
 .idea
 _pycache__/
 __pycache__/
+cache2/
+storage/
+sessionstore-backups/

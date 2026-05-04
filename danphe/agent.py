@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from danphe import router
-from danphe.config import load_claude_md, load_skills
+from danphe.config import load_claude_md
 from danphe import tools as tool_lib
 
 MAX_ITER = 10
@@ -21,7 +21,14 @@ MAX_ITER = 10
 _BASE_SYSTEM = """\
 You are Danphe, an agentic developer assistant running in the terminal.
 You have tools to read files, write files, run shell commands, list directories, \
-and search code.
+and search code. You also have access to specialized skills via the list_skills and read_skill tools.
+
+Available CLI commands you can suggest to users:
+- /instagram - Send Instagram messages (username or display name)
+- /help - Show all available commands
+- /model - Switch AI models
+- /clear - Clear conversation history
+- /compact - Summarize conversation to save tokens
 
 Guidelines:
 - Use tools proactively — read relevant files before modifying them.
@@ -37,10 +44,6 @@ def _build_system(cwd: Path) -> str:
     claude_md = load_claude_md(cwd)
     if claude_md:
         parts.append(f"\n## Project context (CLAUDE.md)\n{claude_md}")
-    skills = load_skills()
-    if skills:
-        skill_names = list(skills.keys())
-        parts.append(f"\n## Available skills\nYou have access to {len(skill_names)} skills: {', '.join(skill_names)}. Use the list_skills tool to see details or read_skill to get full content of a specific skill.")
     return "\n".join(parts)
 
 

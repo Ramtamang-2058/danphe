@@ -8,7 +8,7 @@ cli.py — danphe interactive REPL + Click entry point.
 
 REPL slash commands:
   /help   /clear  /compact  /model  /cost
-  /add <file>     /instagram          /exit
+  /add <file>     /instagram     /skills     /exit
 """
 from __future__ import annotations
 import os
@@ -40,7 +40,7 @@ console = ui.console
 
 _SLASH_CMDS = [
     "/help", "/clear", "/compact", "/model", "/cost",
-    "/add", "/instagram", "/instragram", "/exit",
+    "/add", "/instagram", "/instragram", "/skills", "/exit",
 ]
 
 
@@ -271,6 +271,7 @@ def _cmd_help() -> None:
             "  [cyan]/cost[/cyan]          Estimate token usage\n"
             "  [cyan]/add [dim]<path>[/dim][/cyan]     Add a file to context\n"
             "  [cyan]/instagram[/cyan]     Send Instagram message (username or display name)\n"
+            "  [cyan]/skills[/cyan]        Show available skills\n"
             "  [cyan]/exit[/cyan]          Exit (also Ctrl+D)\n\n"
             "[bold]Available tools[/bold]\n"
             "  [cyan]read_file, write_file, run_bash, list_files, search_code[/cyan]\n"
@@ -417,9 +418,38 @@ def _cmd_instagram() -> None:
         console.print("[dim]Cancelled.[/dim]")
         return
 
+    # Confirm before sending
+    console.print(f"\n[bold]Send message to '{username}':[/bold] {message}")
+    try:
+        confirm = input("Confirm? (y/N): ").strip().lower()
+        if confirm not in ('y', 'yes'):
+            console.print("[dim]Cancelled.[/dim]")
+            return
+    except KeyboardInterrupt:
+        console.print("[dim]Cancelled.[/dim]")
+        return
+
     import subprocess
     console.print(f"  [cyan]Launching[/cyan] [dim]{script}[/dim] with Instagram message to '{username}'\n")
     subprocess.run([sys.executable, str(script), platform, username, message], cwd=str(script.parent))
+
+
+def _cmd_skills() -> None:
+    """Show available skills."""
+    from danphe.config import load_skills
+    skills = load_skills()
+    if not skills:
+        console.print("[yellow]No skills available.[/yellow]")
+        return
+    
+    console.print("[bold cyan]Available Skills:[/bold cyan]")
+    for name, content in skills.items():
+        # Get first line or first 100 chars as description
+        first_line = content.split('\n', 1)[0].strip()
+        if len(first_line) > 100:
+            first_line = first_line[:97] + "..."
+        console.print(f"  [cyan]{name}[/cyan]: {first_line}")
+    console.print(f"\n[dim]Use the list_skills tool for brief descriptions or read_skill tool for full content.[/dim]")
 
 
 # ── Main REPL ──────────────────────────────────────────────────────────────────
@@ -477,6 +507,8 @@ def repl() -> None:
                 _cmd_add(args, session)
             elif cmd in ("/instagram", "/instragram"):
                 _cmd_instagram()
+            elif cmd == "/skills":
+                _cmd_skills()
             else:
                 console.print(f"[yellow]Unknown command: {cmd}  (try /help)[/yellow]")
             continue
