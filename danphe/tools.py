@@ -87,6 +87,31 @@ SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_skills",
+            "description": "List all available skills with brief descriptions.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_skill",
+            "description": "Read the full content of a specific skill.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Name of the skill to read"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
 ]
 
 
@@ -103,6 +128,10 @@ def execute(name: str, args: dict[str, Any]) -> str:
             return _ls(args.get("path", "."), args.get("pattern"))
         if name == "search_code":
             return _grep(args["pattern"], args.get("path", "."))
+        if name == "list_skills":
+            return _list_skills()
+        if name == "read_skill":
+            return _read_skill(args["name"])
         return f"Unknown tool: {name}"
     except KeyError as e:
         return f"Missing required argument {e} for tool {name}"
@@ -189,3 +218,27 @@ def _grep(pattern: str, path: str = ".") -> str:
     if len(lines) > 40:
         lines = lines[:40] + [f"… ({len(out.split(chr(10))) - 40} more lines truncated)"]
     return "\n".join(lines)
+
+
+def _list_skills() -> str:
+    from .config import load_skills
+    skills = load_skills()
+    if not skills:
+        return "No skills available."
+
+    lines = ["Available skills:"]
+    for name, content in skills.items():
+        # Get first line or first 100 chars as description
+        first_line = content.split('\n', 1)[0].strip()
+        if len(first_line) > 100:
+            first_line = first_line[:97] + "..."
+        lines.append(f"- {name}: {first_line}")
+    return "\n".join(lines)
+
+
+def _read_skill(name: str) -> str:
+    from .config import load_skills
+    skills = load_skills()
+    if name not in skills:
+        return f"Error: skill '{name}' not found. Use list_skills to see available skills."
+    return f"## {name}\n\n{skills[name]}"

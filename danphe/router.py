@@ -2,10 +2,10 @@
 router.py — pick the cheapest model that can handle the task.
 
 Priority:
-  1. NVIDIA glm-4.7       — fast, free, native tool-call  (< 6K tokens)
-  2. NVIDIA deepseek-flash — 1M ctx, free, coding          (< 60K tokens)
-  3. NVIDIA nemotron-super — heavy reasoning, free          (any size)
-  4. Gemini Flash          — fallback if NVIDIA rate-limits
+  1. Gemini Flash          — default model (when API key is available)
+  2. NVIDIA glm-4.7       — fast, free, native tool-call  (< 6K tokens)
+  3. NVIDIA deepseek-flash — 1M ctx, free, coding          (< 60K tokens)
+  4. NVIDIA nemotron-super — heavy reasoning, free          (any size)
   5. devloop bridge        — last resort (no API key needed)
 """
 from __future__ import annotations
@@ -41,6 +41,9 @@ def pick(messages: list[dict]) -> tuple[str, str]:
     has_nvidia = bool(config.NVIDIA_API_KEY)
     has_gemini = bool(config.GEMINI_API_KEY)
 
+    if has_gemini:
+        return ("gemini", "")
+
     if has_nvidia:
         if tokens < 6_000:
             return ("nvidia", "fast")       # glm-4.7: fastest
@@ -48,9 +51,6 @@ def pick(messages: list[dict]) -> tuple[str, str]:
             return ("nvidia", "long")       # deepseek-flash: big context
         else:
             return ("nvidia", "reasoning")  # nemotron: heavy lifting
-
-    if has_gemini:
-        return ("gemini", "")
 
     # No API keys — fall back to browser bridge
     return ("devloop", "")

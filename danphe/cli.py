@@ -40,7 +40,7 @@ console = ui.console
 
 _SLASH_CMDS = [
     "/help", "/clear", "/compact", "/model", "/cost",
-    "/add", "/instagram", "/exit",
+    "/add", "/instagram", "/instragram", "/exit",
 ]
 
 
@@ -270,8 +270,11 @@ def _cmd_help() -> None:
             "  [cyan]/model[/cyan]         Show current model routing\n"
             "  [cyan]/cost[/cyan]          Estimate token usage\n"
             "  [cyan]/add [dim]<path>[/dim][/cyan]     Add a file to context\n"
-            "  [cyan]/instagram[/cyan]     Launch Instagram/WhatsApp automation\n"
+            "  [cyan]/instagram[/cyan]     Send Instagram/WhatsApp message (interactive prompts)\n"
             "  [cyan]/exit[/cyan]          Exit (also Ctrl+D)\n\n"
+            "[bold]Available tools[/bold]\n"
+            "  [cyan]read_file, write_file, run_bash, list_files, search_code[/cyan]\n"
+            "  [cyan]list_skills, read_skill[/cyan] (for accessing skill knowledge base)\n\n"
             "[bold]Input tricks[/bold]\n"
             "  [cyan]@file.py[/cyan]       Inline file contents in your message\n"
             "  [cyan]Esc+Enter[/cyan]      Insert a newline (multi-line input)\n"
@@ -285,7 +288,16 @@ def _cmd_help() -> None:
     )
 
 
-def _cmd_model(session: list[dict]) -> None:
+def _cmd_model(args: list[str], session: list[dict]) -> None:
+    if args:
+        target = args[0].lower().strip()
+        if target in ["gemini", "fast", "glm", "long", "deepseek", "reasoning", "nemotron", "devloop", "auto"]:
+            config.FORCE_MODEL = "" if target == "auto" else target
+            console.print(f"  [green]✓ Setup model routing to[/green] [cyan]{target}[/cyan]")
+        else:
+            console.print(f"  [yellow]Unknown model option: {target}. Valid: auto, gemini, fast, long, reasoning, devloop[/yellow]")
+        return
+
     content = " ".join(
         m.get("content", "") for m in session if isinstance(m.get("content"), str)
     ) or "hello"
@@ -293,6 +305,7 @@ def _cmd_model(session: list[dict]) -> None:
     label = router.describe(backend, tier)
     tok = sum(len(m.get("content", "")) for m in session if isinstance(m.get("content"), str)) // 4
     console.print(f"  [dim]route:[/dim] [cyan]{label}[/cyan]  [dim]est. {tok} tokens in session[/dim]")
+    console.print("  [dim]use /model <name> to switch (e.g. /model gemini, /model fast, /model auto)[/dim]")
 
 
 def _cmd_cost(session: list[dict]) -> None:
@@ -384,9 +397,36 @@ def _cmd_instagram() -> None:
     if script is None:
         console.print("[red]Instagram automation not found in instra-automate/[/red]")
         return
+
+    # Prompt for platform, target, and message
+    try:
+        platform = input("Platform (instagram/whatsapp): ").strip().lower()
+        if platform not in ["instagram", "whatsapp"]:
+            console.print("[red]Invalid platform. Choose 'instagram' or 'whatsapp'.[/red]")
+            return
+
+        if platform == "instagram":
+            target_prompt = "Instagram username: "
+        else:
+            target_prompt = "WhatsApp contact name: "
+
+        target = input(target_prompt).strip()
+        if not target:
+            console.print("[red]Target cannot be empty.[/red]")
+            return
+
+        message = input("Message: ").strip()
+        if not message:
+            console.print("[red]Message cannot be empty.[/red]")
+            return
+
+    except KeyboardInterrupt:
+        console.print("[dim]Cancelled.[/dim]")
+        return
+
     import subprocess
-    console.print(f"  [cyan]Launching[/cyan] [dim]{script}[/dim]\n")
-    subprocess.run([sys.executable, str(script)], cwd=str(script.parent))
+    console.print(f"  [cyan]Launching[/cyan] [dim]{script}[/dim] with {platform} {target} '{message}'\n")
+    subprocess.run([sys.executable, str(script), platform, target, message], cwd=str(script.parent))
 
 
 # ── Main REPL ──────────────────────────────────────────────────────────────────
@@ -437,12 +477,12 @@ def repl() -> None:
             elif cmd == "/compact":
                 _cmd_compact(session, cwd)
             elif cmd == "/model":
-                _cmd_model(session)
+                _cmd_model(args, session)
             elif cmd == "/cost":
                 _cmd_cost(session)
             elif cmd == "/add":
                 _cmd_add(args, session)
-            elif cmd == "/instagram":
+            elif cmd in ("/instagram", "/instragram"):
                 _cmd_instagram()
             else:
                 console.print(f"[yellow]Unknown command: {cmd}  (try /help)[/yellow]")

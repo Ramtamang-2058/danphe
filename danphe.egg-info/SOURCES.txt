@@ -7,6 +7,8 @@ danphe/cli.py
 danphe/config.py
 danphe/patches.py
 danphe/router.py
+danphe/tools.py
+danphe/ui.py
 danphe.egg-info/PKG-INFO
 danphe.egg-info/SOURCES.txt
 danphe.egg-info/dependency_links.txt

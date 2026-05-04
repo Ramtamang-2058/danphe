@@ -26,8 +26,8 @@ def stream(
     genai = _get_genai()
 
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        system_instruction=system or None,
+        model_name="gemini-3-flash-preview",
+        system_instruction=(system or "") + "\n\nCRITICAL INSTRUCTION: You must strictly reply with plain text only. Do NOT emit or attempt any FunctionCall outputs.",
     )
 
     # Convert OpenAI message format → Gemini format
@@ -47,8 +47,18 @@ def stream(
     response = chat.send_message(last_user or messages[-1]["content"], stream=True)
 
     for chunk in response:
-        if chunk.text:
-            yield chunk.text
+        try:
+            if chunk.text:
+                yield chunk.text
+        except ValueError:
+            # If Gemini outputs a FunctionCall anyway, chunk.text throws ValueError.
+            # We degrade gracefully.
+            try:
+                for part in chunk.candidates[0].content.parts:
+                    if part.text:
+                        yield part.text
+            except Exception:
+                pass
 
 
 def complete(messages: list[dict], system: str = "") -> str:

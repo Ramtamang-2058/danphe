@@ -39,8 +39,8 @@ def _build_system(cwd: Path) -> str:
         parts.append(f"\n## Project context (CLAUDE.md)\n{claude_md}")
     skills = load_skills()
     if skills:
-        skill_text = "\n\n".join(f"### {k}\n{v}" for k, v in skills.items())
-        parts.append(f"\n## Available skills\n{skill_text}")
+        skill_names = list(skills.keys())
+        parts.append(f"\n## Available skills\nYou have access to {len(skill_names)} skills: {', '.join(skill_names)}. Use the list_skills tool to see details or read_skill to get full content of a specific skill.")
     return "\n".join(parts)
 
 
@@ -78,13 +78,28 @@ def run(
                 system=system,
                 tools=tool_lib.SCHEMAS,
             )
-        else:
+        elif backend == "gemini":
             # Gemini fallback — no native tool calling; plain stream
             user_msgs = [m for m in messages if m.get("role") != "system"]
             events = (
                 ("text", chunk)
                 for chunk in gm.stream(user_msgs, system=system)
             )
+        else:
+            # Devloop bridge fallback
+            import subprocess
+            user_msgs = [m for m in messages if m.get("role") != "system"]
+            q = user_msgs[-1]["content"] if user_msgs else ""
+            
+            def _stream_devloop():
+                try:
+                    process = subprocess.Popen(["devloop", "ask", q], stdout=subprocess.PIPE, text=True)
+                    for line in process.stdout:
+                        yield ("text", line)
+                    process.wait()
+                except Exception as e:
+                    yield ("text", f"devloop bridge error: {e}")
+            events = _stream_devloop()
 
         for kind, data in events:
             if kind == "text":
@@ -163,6 +178,18 @@ def stream_ask(
         for kind, data in nvidia.stream_with_tools(messages, model_tier=tier, system=system):
             if kind == "text":
                 yield data
-    else:
+    elif backend == "gemini":
         user_msgs = [m for m in messages if m.get("role") != "system"]
         yield from gm.stream(user_msgs, system=system)
+    else:
+        # Devloop bridge
+        import subprocess
+        user_msgs = [m for m in messages if m.get("role") != "system"]
+        q = user_msgs[-1]["content"] if user_msgs else ""
+        try:
+            process = subprocess.Popen(["devloop", "ask", q], stdout=subprocess.PIPE, text=True)
+            for line in process.stdout:
+                yield line
+            process.wait()
+        except Exception as e:
+            yield f"devloop bridge error: {e}\n"

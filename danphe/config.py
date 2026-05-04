@@ -3,11 +3,13 @@ config.py — load .env, CLAUDE.md, and ~/.danphe/skills/*.md
 """
 import os
 from pathlib import Path
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 # ── Load .env from cwd or home ────────────────────────────────────────────────
-load_dotenv(Path.cwd() / ".env", override=False)
+load_dotenv(find_dotenv(usecwd=True), override=False)
 load_dotenv(Path.home() / ".danphe" / ".env", override=False)
+# Fallback for local development if installed via pip -e:
+load_dotenv(Path(__file__).parent.parent / ".env", override=False)
 
 # ── API keys ──────────────────────────────────────────────────────────────────
 NVIDIA_API_KEY  = os.getenv("NVIDIA_API_KEY", "")
