@@ -186,9 +186,7 @@ class InstagramDMClient:
         generator: ReplyGenerator,
         personality: str = "",
     ):
-        """
-        Read messages from user, generate context-aware reply via LLM, send it.
-        """
+        """Read messages, generate context-aware reply, send once."""
         print(f"\n[instagram] Reading conversation with {username}...")
         try:
             messages = await self.read_messages(page, username)
@@ -201,28 +199,84 @@ class InstagramDMClient:
             print("  No messages found")
             return
 
-        # Build conversation context
         ctx = ConversationContext(username, "instagram", personality)
         for msg in messages:
             ctx.add_message(msg["sender"], msg["text"], msg["timestamp"])
 
-        # Display last few messages
         print(f"\n  Last 3 messages:")
         for msg in messages[-3:]:
             print(f"    {msg['sender']}: {msg['text']}")
 
-        # Generate reply
         print(f"\n  Generating reply via LLM...")
         try:
             reply = generator.generate(ctx, platform="instagram", max_length=200)
             print(f"  Generated: {reply}\n")
-
-            # Send it
-            print(f"  Sending reply...")
             await self.send_message(page, username, reply)
-
         except Exception as e:
             print(f"  [error] Failed to generate/send reply: {e}")
+
+    async def continuous_auto_reply_loop(
+        self,
+        page: Page,
+        username: str,
+        generator: ReplyGenerator,
+        check_interval: int = 45,
+        personality: str = "",
+    ):
+        """
+        Poll for new messages from username, auto-reply whenever they write.
+        Runs until Ctrl+C. Sends to LLM with full history context each time.
+        """
+        print(f"\n[instagram] Starting continuous loop for {username}")
+        print(f"  Checking every {check_interval}s — press Ctrl+C to stop\n")
+
+        last_replied_text: str | None = None
+        cycle = 0
+
+        while True:
+            cycle += 1
+            try:
+                messages = await self.read_messages(page, username)
+                their_msgs = [m for m in messages if m["sender"] != "self"]
+
+                if not their_msgs:
+                    print(f"  [cycle {cycle}] No messages from {username} yet — waiting...")
+                    await asyncio.sleep(check_interval)
+                    continue
+
+                latest = their_msgs[-1]
+                latest_text = latest["text"]
+
+                if latest_text == last_replied_text:
+                    print(f"  [cycle {cycle}] No new message — waiting...")
+                    await asyncio.sleep(check_interval)
+                    continue
+
+                # New message detected
+                print(f"\n  [cycle {cycle}] New message from {username}: {latest_text}")
+
+                ctx = ConversationContext(username, "instagram", personality)
+                for msg in messages[-15:]:  # last 15 for rich context
+                    ctx.add_message(msg["sender"], msg["text"], msg["timestamp"])
+
+                print(f"  Generating reply...")
+                try:
+                    reply = generator.generate(ctx, platform="instagram", max_length=250)
+                    print(f"  Reply: {reply}")
+                    await self.send_message(page, username, reply)
+                    last_replied_text = latest_text
+                    print(f"  Sent. Next check in {check_interval}s\n")
+                except Exception as e:
+                    print(f"  [error] Reply failed: {e}")
+
+                await asyncio.sleep(check_interval)
+
+            except KeyboardInterrupt:
+                print("\n[instagram] Continuous loop stopped by user.")
+                break
+            except Exception as e:
+                print(f"  [error] Cycle {cycle} failed: {e} — retrying in {check_interval}s")
+                await asyncio.sleep(check_interval)
 
 
 # ── Platform: WhatsApp ────────────────────────────────────────────────────────
@@ -395,13 +449,22 @@ async def main():
     platform = sys.argv[1].lower()
     target = sys.argv[2]
     auto_reply = "--auto-reply" in sys.argv
+    continuous = "--continuous" in sys.argv
     personality = ""
+    interval = 45
 
-    # Extract personality if provided
     if "--personality" in sys.argv:
         idx = sys.argv.index("--personality")
         if idx + 1 < len(sys.argv):
             personality = sys.argv[idx + 1]
+
+    if "--interval" in sys.argv:
+        idx = sys.argv.index("--interval")
+        if idx + 1 < len(sys.argv):
+            try:
+                interval = int(sys.argv[idx + 1])
+            except ValueError:
+                pass
 
     generator = ReplyGenerator(personality=personality)
     memory = SessionMemory()
@@ -415,10 +478,15 @@ async def main():
 
             await client.ensure_logged_in(page)
 
-            if auto_reply:
+            if continuous:
+                await client.continuous_auto_reply_loop(
+                    page, target, generator,
+                    check_interval=interval,
+                    personality=personality,
+                )
+            elif auto_reply:
                 await client.auto_reply(page, target, generator, personality)
             else:
-                # Just read and display
                 messages = await client.read_messages(page, target)
                 ctx_obj = ConversationContext(target, "instagram", personality)
                 for msg in messages:

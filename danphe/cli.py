@@ -388,51 +388,142 @@ def _cmd_add(args: list[str], session: list[dict]) -> None:
             console.print(f"  [yellow]{path_str} is a directory — use @dir pattern in your message[/yellow]")
 
 
-def _cmd_instagram() -> None:
-    """Launch the Instagram messaging automation."""
+def _load_instagram_contacts() -> dict[str, str]:
+    """Load display-name → username map from ~/.danphe/instagram_contacts.json."""
+    import json
+    contacts_file = Path.home() / ".danphe" / "instagram_contacts.json"
+    if contacts_file.exists():
+        try:
+            return json.loads(contacts_file.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _resolve_instagram_target(name: str, contacts: dict[str, str]) -> str:
+    """Return Instagram username for a display name, falling back to the name itself."""
+    key = name.lower().strip().lstrip("@")
+    # Exact match first, then substring match
+    if key in contacts:
+        return contacts[key]
+    for display, username in contacts.items():
+        if key in display or display in key:
+            return username
+    return name.lstrip("@")
+
+
+def _cmd_instagram(args: list[str] | None = None) -> None:
+    """Instagram automation: send, read, auto-reply once, or continuous loop."""
     project_root = Path(__file__).parent.parent
-    candidates = [
-        project_root / "instra-automate" / "msg.py",
-        project_root / "instra-automate" / "send_dm.py",
-    ]
-    script = next((c for c in candidates if c.exists()), None)
-    if script is None:
-        console.print("[red]Instagram automation not found in instra-automate/[/red]")
+    social_script = project_root / "instra-automate" / "social_media.py"
+    if not social_script.exists():
+        console.print("[red]social_media.py not found in instra-automate/[/red]")
         return
 
-    # Since command is /instagram, assume Instagram platform
-    platform = "instagram"
+    contacts = _load_instagram_contacts()
+    contacts_hint = (
+        f"  [dim]Known contacts: {', '.join(contacts.keys())}[/dim]\n"
+        if contacts else
+        f"  [dim]Tip: add contacts to ~/.danphe/instagram_contacts.json for name lookup[/dim]\n"
+    )
+    console.print(contacts_hint)
 
-    # Prompt for username and message
     try:
-        username = input("Instagram username or display name to message: ").strip()
-        if not username:
-            console.print("[red]Username cannot be empty.[/red]")
+        raw_target = input("Who? (display name or @username): ").strip()
+        if not raw_target:
+            console.print("[red]Target cannot be empty.[/red]")
             return
+        username = _resolve_instagram_target(raw_target, contacts)
+        if username != raw_target.lstrip("@"):
+            console.print(f"  [dim]Resolved '{raw_target}' → @{username}[/dim]")
 
-        message = input("Message to send: ").strip()
-        if not message:
-            console.print("[red]Message cannot be empty.[/red]")
-            return
-
+        console.print(
+            "\n  [bold]Modes:[/bold]\n"
+            "  [cyan]1[/cyan]  Send a message\n"
+            "  [cyan]2[/cyan]  Read conversation history\n"
+            "  [cyan]3[/cyan]  Auto-reply once (LLM reads history, replies)\n"
+            "  [cyan]4[/cyan]  Continuous loop (LLM watches + replies all day)\n"
+        )
+        mode = input("Choose mode [1-4]: ").strip()
     except KeyboardInterrupt:
         console.print("[dim]Cancelled.[/dim]")
         return
 
-    # Confirm before sending
-    console.print(f"\n[bold]Send message to '{username}':[/bold] {message}")
-    try:
-        confirm = input("Confirm? (y/N): ").strip().lower()
-        if confirm not in ('y', 'yes'):
-            console.print("[dim]Cancelled.[/dim]")
-            return
-    except KeyboardInterrupt:
-        console.print("[dim]Cancelled.[/dim]")
-        return
+    personality = (
+        "warm, professional, senior-friendly, funny and fruity — "
+        "like a smart friend who respects elders and sneaks in gentle wit"
+    )
 
     import subprocess
-    console.print(f"  [cyan]Launching[/cyan] [dim]{script}[/dim] with Instagram message to '{username}'\n")
-    subprocess.run([sys.executable, str(script), platform, username, message], cwd=str(script.parent))
+
+    if mode == "1":
+        try:
+            message = input("Message: ").strip()
+            if not message:
+                console.print("[red]Message cannot be empty.[/red]")
+                return
+            confirm = input(f"Send to @{username}? (y/N): ").strip().lower()
+            if confirm not in ("y", "yes"):
+                console.print("[dim]Cancelled.[/dim]")
+                return
+        except KeyboardInterrupt:
+            console.print("[dim]Cancelled.[/dim]")
+            return
+        # Use the legacy send_dm script if available, else social_media with a send approach
+        send_script = project_root / "instra-automate" / "msg.py"
+        if not send_script.exists():
+            send_script = project_root / "instra-automate" / "send_dm.py"
+        if send_script.exists():
+            console.print(f"  [cyan]Sending to @{username}...[/cyan]\n")
+            subprocess.run(
+                [sys.executable, str(send_script), "instagram", username, message],
+                cwd=str(send_script.parent),
+            )
+        else:
+            console.print("[red]No send script found (msg.py / send_dm.py)[/red]")
+
+    elif mode == "2":
+        console.print(f"  [cyan]Reading conversation with @{username}...[/cyan]\n")
+        subprocess.run(
+            [sys.executable, str(social_script), "instagram", username],
+            cwd=str(social_script.parent),
+        )
+
+    elif mode == "3":
+        console.print(f"  [cyan]Auto-reply once to @{username}...[/cyan]\n")
+        subprocess.run(
+            [
+                sys.executable, str(social_script),
+                "instagram", username,
+                "--auto-reply",
+                "--personality", personality,
+            ],
+            cwd=str(social_script.parent),
+        )
+
+    elif mode == "4":
+        try:
+            interval_str = input("Check interval in seconds [45]: ").strip()
+            interval = int(interval_str) if interval_str.isdigit() else 45
+        except KeyboardInterrupt:
+            console.print("[dim]Cancelled.[/dim]")
+            return
+        console.print(
+            f"  [cyan]Starting continuous loop for @{username} "
+            f"(every {interval}s) — Ctrl+C to stop[/cyan]\n"
+        )
+        subprocess.run(
+            [
+                sys.executable, str(social_script),
+                "instagram", username,
+                "--continuous",
+                "--interval", str(interval),
+                "--personality", personality,
+            ],
+            cwd=str(social_script.parent),
+        )
+    else:
+        console.print("[yellow]Invalid choice.[/yellow]")
 
 
 def _cmd_skills() -> None:
@@ -507,7 +598,7 @@ def repl() -> None:
             elif cmd == "/add":
                 _cmd_add(args, session)
             elif cmd in ("/instagram", "/instragram"):
-                _cmd_instagram()
+                _cmd_instagram(args)
             elif cmd == "/skills":
                 _cmd_skills()
             else:

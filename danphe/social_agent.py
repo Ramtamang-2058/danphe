@@ -62,8 +62,18 @@ class ConversationContext:
 class ReplyGenerator:
     """Generate context-aware replies using LLM."""
 
+    # Default Instagram personality: warm, professional, senior-friendly, playful
+    DEFAULT_PERSONALITY = (
+        "a warm, witty, and slightly fruity personality — like a smart friend "
+        "who happens to be professional. You write like someone who respects the "
+        "person they're talking to (treat them as a wise senior), keeps things "
+        "light and fun, sneaks in a cheeky joke or playful observation when "
+        "appropriate, but never loses professionalism. Short sentences. No slang. "
+        "A little humor goes a long way. Emoji are welcome but used sparingly."
+    )
+
     def __init__(self, personality: str = "", system_prompt: str = ""):
-        self.personality = personality or "helpful, friendly, and professional"
+        self.personality = personality or self.DEFAULT_PERSONALITY
         self.system_prompt = system_prompt
 
     def build_system(self, platform: str, context: ConversationContext) -> str:
@@ -72,11 +82,17 @@ class ReplyGenerator:
             return self.system_prompt
 
         lines = [
-            f"You are a {self.personality} assistant replying on {platform}.",
-            f"Analyze the conversation history below and generate a natural, contextual reply.",
-            f"Keep responses concise, friendly, and relevant to the last message.",
+            f"You are replying on behalf of the user on {platform}.",
+            f"Personality: {self.personality}",
             f"",
-            context.get_summary(max_messages=10),
+            f"Rules:",
+            f"- Read the full conversation below before replying.",
+            f"- Reply ONLY to the last message from the other person.",
+            f"- Keep it under 3 sentences unless the message demands more.",
+            f"- Be warm and genuine — never robotic or copy-paste sounding.",
+            f"- If the other person is a senior or elder, show extra respect while keeping wit.",
+            f"",
+            context.get_summary(max_messages=15),
         ]
         return "\n".join(lines)
 
