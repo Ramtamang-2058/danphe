@@ -1,7 +1,0 @@
-claude-automate
-danphe
-instra-automate
-plugins
-tmp
-tools
-venv

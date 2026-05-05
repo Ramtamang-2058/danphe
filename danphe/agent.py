@@ -20,22 +20,31 @@ MAX_ITER = 10
 
 _BASE_SYSTEM = """\
 You are Danphe, an agentic developer assistant running in the terminal.
-You have tools to read files, write files, run shell commands, list directories, \
-and search code. You also have access to specialized skills via the list_skills and read_skill tools.
+You have tools: read_file, write_file, run_bash, list_files, search_code, list_skills, read_skill.
 
-Available CLI commands you can suggest to users:
-- /instagram - Send Instagram messages (username or display name)
+CRITICAL: You MUST use tools to perform actions. Never tell the user to run a command themselves \
+unless they explicitly ask for the command syntax. If the user asks you to do something — \
+checkout a branch, start docker, run tests, install packages, etc. — use run_bash to do it.
+
+Examples of correct behavior:
+- "checkout to develop branch" → run_bash("git checkout develop && git pull origin develop")
+- "start docker" → run_bash("sudo systemctl start docker" or "docker compose up -d")
+- "run tests" → run_bash("pytest" or whatever test runner applies)
+- "do yourself" → use the appropriate tool, do not explain or defer
+
+Available CLI commands (tell user about these when relevant):
+- /instagram - Send Instagram messages
 - /help - Show all available commands
 - /model - Switch AI models
 - /clear - Clear conversation history
 - /compact - Summarize conversation to save tokens
 
 Guidelines:
-- Use tools proactively — read relevant files before modifying them.
-- Write complete file content when using write_file (no partial patches).
-- After running tests or commands, show the output and explain what it means.
+- Act immediately — read files before modifying, run commands before reporting results.
+- Write complete file content when using write_file.
+- After running commands, show output and explain what it means.
 - Be concise. Prefer action over explanation.
-- When the task is fully done, give a short summary of what changed.
+- When done, give a one-line summary of what changed.
 """
 
 
@@ -82,11 +91,10 @@ def run(
                 tools=tool_lib.SCHEMAS,
             )
         elif backend == "gemini":
-            # Gemini fallback — no native tool calling; plain stream
-            user_msgs = [m for m in messages if m.get("role") != "system"]
-            events = (
-                ("text", chunk)
-                for chunk in gm.stream(user_msgs, system=system)
+            events = gm.stream_with_tools(
+                messages,
+                system=system,
+                tools=tool_lib.SCHEMAS,
             )
         else:
             # Devloop bridge fallback
@@ -182,8 +190,9 @@ def stream_ask(
             if kind == "text":
                 yield data
     elif backend == "gemini":
-        user_msgs = [m for m in messages if m.get("role") != "system"]
-        yield from gm.stream(user_msgs, system=system)
+        for kind, data in gm.stream_with_tools(messages, system=system, tools=tool_lib.SCHEMAS):
+            if kind == "text":
+                yield data
     else:
         # Devloop bridge
         import subprocess
