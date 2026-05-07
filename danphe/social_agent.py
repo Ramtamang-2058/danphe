@@ -88,10 +88,8 @@ class ReplyGenerator:
         lines = [
             self.personality,
             "",
-            f"Platform: {platform}",
-            "",
-            "Conversation so far (reply to the LAST message from the other person only):",
-            context.get_summary(max_messages=15),
+            "Last few messages (reply only to the final one from the other person):",
+            context.get_summary(max_messages=6),
         ]
         return "\n".join(lines)
 
@@ -107,13 +105,16 @@ class ReplyGenerator:
         self.system_prompt = system_prompt
         self.model = model if model in self.SUPPORTED_MODELS else "auto"
 
+    # Use the lite model for social replies — 30× more free quota than flash
+    GEMINI_SOCIAL_MODEL = "gemini-2.0-flash-lite"
+
     def _call_gemini(self, messages: list[dict], system: str, stream: bool):
-        """Try Gemini Flash. Raises on 429 as RuntimeError('RATE_LIMITED ...')."""
+        """Try Gemini Flash Lite. Raises on 429 as RuntimeError('RATE_LIMITED ...')."""
         from danphe.llm import gemini
         try:
             if stream:
-                return gemini.stream(messages, system=system)
-            return gemini.complete(messages, system=system)
+                return gemini.stream(messages, system=system, model=self.GEMINI_SOCIAL_MODEL)
+            return gemini.complete(messages, system=system, model=self.GEMINI_SOCIAL_MODEL)
         except Exception as e:
             err = str(e)
             if "429" in err or "RESOURCE_EXHAUSTED" in err:

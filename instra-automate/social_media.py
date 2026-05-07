@@ -376,9 +376,16 @@ class InstagramDMClient:
                     ancestor = ancestor.parentElement;
                 }
 
-                // Position fallback: sent messages are right-aligned
+                // Sender resolution:
+                // 1. If avatar/profile link found near message → it's from them (never self)
+                // 2. Otherwise fall back to position (self = right-aligned, > 60% of viewport)
                 const midX = rect.left + rect.width / 2;
-                const isSelf = midX > viewWidth * 0.55;
+                let isSelf;
+                if (senderName) {
+                    isSelf = false;  // avatar link found → definitely not self
+                } else {
+                    isSelf = midX > viewWidth * 0.6;
+                }
 
                 results.push({
                     text,

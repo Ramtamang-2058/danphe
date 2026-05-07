@@ -126,6 +126,7 @@ def stream_with_tools(
     messages: list[dict],
     system: str = "",
     tools: list[dict] | None = None,
+    model: str = "gemini-2.0-flash",
 ) -> Iterator[tuple[str, object]]:
     """
     Stream from Gemini with tool calling support.
@@ -144,10 +145,10 @@ def stream_with_tools(
     )
 
     if DEBUG:
-        print(f"[danphe debug] gemini tools={bool(tools)} history={len(history)}")
+        print(f"[danphe debug] gemini model={model} tools={bool(tools)} history={len(history)}")
 
     chat = client.chats.create(
-        model="gemini-2.0-flash",
+        model=model,
         history=history,
         config=config,
     )
@@ -174,12 +175,13 @@ def stream_with_tools(
 def stream(
     messages: list[dict],
     system: str = "",
+    model: str = "gemini-2.0-flash",
 ) -> Iterator[str]:
     """Plain text stream (no tools). Yields string chunks."""
-    for kind, data in stream_with_tools(messages, system=system, tools=None):
+    for kind, data in stream_with_tools(messages, system=system, tools=None, model=model):
         if kind == "text":
             yield data
 
 
-def complete(messages: list[dict], system: str = "") -> str:
-    return "".join(stream(messages, system=system))
+def complete(messages: list[dict], system: str = "", model: str = "gemini-2.0-flash") -> str:
+    return "".join(stream(messages, system=system, model=model))
