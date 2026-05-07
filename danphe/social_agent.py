@@ -62,39 +62,75 @@ class ConversationContext:
 class ReplyGenerator:
     """Generate context-aware replies using LLM."""
 
-    # Default Instagram personality: warm, professional, senior-friendly, playful
+    # Sound like a real person, not an AI
     DEFAULT_PERSONALITY = (
-        "a warm, witty, and slightly fruity personality — like a smart friend "
-        "who happens to be professional. You write like someone who respects the "
-        "person they're talking to (treat them as a wise senior), keeps things "
-        "light and fun, sneaks in a cheeky joke or playful observation when "
-        "appropriate, but never loses professionalism. Short sentences. No slang. "
-        "A little humor goes a long way. Emoji are welcome but used sparingly."
+        "You are Ram, a real person replying to a friend on Instagram. "
+        "You are a young Nepali guy — casual, warm, genuine. "
+        "You text exactly like a real human: short, natural, sometimes mixed Nepali-English.\n\n"
+        "Hard rules:\n"
+        "- NEVER reveal you are an AI, bot, or assistant — you are Ram\n"
+        "- NEVER start a sentence with 'I'\n"
+        "- Keep replies to 1-2 sentences maximum — this is texting, not an essay\n"
+        "- If someone asks you to hang out, meet up, or go outside: give a natural excuse "
+        "(busy with work, tired, maybe later, have something to finish, etc.)\n"
+        "- If someone asks a question, answer it naturally like a friend would\n"
+        "- Match the language: if they text in Nepali, reply in Nepali; if English, reply in English\n"
+        "- Do NOT use filler phrases like 'Absolutely!', 'Sure thing!', 'Of course!'\n"
+        "- Emoji only if the other person used them first\n"
+        "- Sound real — a little tired, a little busy, but always friendly"
     )
 
-    def __init__(self, personality: str = "", system_prompt: str = ""):
-        self.personality = personality or self.DEFAULT_PERSONALITY
-        self.system_prompt = system_prompt
-
     def build_system(self, platform: str, context: ConversationContext) -> str:
-        """Build LLM system prompt with personality and context."""
+        """Build LLM system prompt with personality and conversation context."""
         if self.system_prompt:
             return self.system_prompt
 
         lines = [
-            f"You are replying on behalf of the user on {platform}.",
-            f"Personality: {self.personality}",
-            f"",
-            f"Rules:",
-            f"- Read the full conversation below before replying.",
-            f"- Reply ONLY to the last message from the other person.",
-            f"- Keep it under 3 sentences unless the message demands more.",
-            f"- Be warm and genuine — never robotic or copy-paste sounding.",
-            f"- If the other person is a senior or elder, show extra respect while keeping wit.",
-            f"",
+            self.personality,
+            "",
+            f"Platform: {platform}",
+            "",
+            "Conversation so far (reply to the LAST message from the other person only):",
             context.get_summary(max_messages=15),
         ]
         return "\n".join(lines)
+
+    # Class-level model preference — set via ReplyGenerator(model="nvidia"|"gemini"|"auto")
+    SUPPORTED_MODELS = ("auto", "gemini", "nvidia")
+
+    def __init__(self, personality: str = "", system_prompt: str = "", model: str = "auto"):
+        if personality:
+            # Append custom tone on top of the base identity rules
+            self.personality = self.DEFAULT_PERSONALITY + f"\n\nTone override: {personality}"
+        else:
+            self.personality = self.DEFAULT_PERSONALITY
+        self.system_prompt = system_prompt
+        self.model = model if model in self.SUPPORTED_MODELS else "auto"
+
+    def _call_gemini(self, messages: list[dict], system: str, stream: bool):
+        """Try Gemini Flash. Raises on 429 as RuntimeError('RATE_LIMITED ...')."""
+        from danphe.llm import gemini
+        try:
+            if stream:
+                return gemini.stream(messages, system=system)
+            return gemini.complete(messages, system=system)
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "RESOURCE_EXHAUSTED" in err:
+                import re as _re
+                delay = _re.search(r"retry in (\d+)", err)
+                wait = f" (retry in {delay.group(1)}s)" if delay else ""
+                raise RuntimeError(f"RATE_LIMITED{wait}") from e
+            raise
+
+    def _call_nvidia(self, messages: list[dict], system: str, stream: bool):
+        """Try NVIDIA fast tier (glm-4.7). Always uses fast — social replies are short."""
+        from danphe import config as _cfg
+        if not _cfg.NVIDIA_API_KEY:
+            raise RuntimeError("no NVIDIA key")
+        if stream:
+            return nvidia.stream(messages, model_tier="fast", system=system)
+        return nvidia.complete(messages, model_tier="fast", system=system)
 
     def generate(
         self,
@@ -102,70 +138,58 @@ class ReplyGenerator:
         platform: str = "instagram",
         max_length: int = 500,
         stream: bool = False,
-    ) -> str | Iterator:
-        """Generate a reply to the last message in context."""
+    ) -> str:
+        """
+        Generate a reply.
+        model="auto"   → Gemini first, NVIDIA fast as fallback
+        model="gemini" → Gemini only
+        model="nvidia" → NVIDIA fast only
+        """
         if not context.messages:
-            return "Hi! How can I help?"
+            return "haha k cha"
 
         last_msg = context.messages[-1]
         system = self.build_system(platform, context)
-
         messages = [
-            {"role": "user", "content": f"Last message from {last_msg['sender']}: {last_msg['text']}\n\nGenerate a short, natural reply (max {max_length} chars):"}
+            {
+                "role": "user",
+                "content": (
+                    f"Their last message: \"{last_msg['text']}\"\n\n"
+                    f"Write a short natural reply (max {max_length} chars). "
+                    f"Reply only — no explanation, no quotes, just the reply text."
+                ),
+            }
         ]
 
-        # Pick model via danphe router
-        backend, tier = router.pick(messages)
+        if self.model == "nvidia":
+            return self._call_nvidia(messages, system, stream)
 
-        if backend == "nvidia":
-            if stream:
-                return nvidia.stream(messages, model_tier=tier, system=system)
+        if self.model == "gemini":
+            return self._call_gemini(messages, system, stream)
+
+        # auto: Gemini first (faster), NVIDIA fast as fallback
+        try:
+            return self._call_gemini(messages, system, stream)
+        except RuntimeError as e:
+            if "RATE_LIMITED" in str(e):
+                print(f"  [gemini] {e} — falling back to NVIDIA fast")
             else:
-                return nvidia.complete(messages, model_tier=tier, system=system)
-        elif backend == "gemini":
-            # Try to import gemini if available
-            try:
-                from danphe.llm import gemini
-                if stream:
-                    return gemini.stream(messages, system=system)
-                else:
-                    return gemini.complete(messages, system=system)
-            except ImportError:
-                # Fallback
-                return f"Thanks for your message! I'd love to help with '{last_msg['text'][:50]}...'"
+                raise
+        except Exception as e:
+            print(f"  [gemini] failed: {e} — falling back to NVIDIA fast")
+
+        try:
+            return self._call_nvidia(messages, system, stream)
+        except Exception as e:
+            raise RuntimeError(f"All models failed. Last error: {e}") from e
+
+    def generate_stream(self, context: ConversationContext, platform: str = "instagram"):
+        """Stream reply."""
+        result = self.generate(context, platform=platform, stream=True)
+        if hasattr(result, "__iter__") and not isinstance(result, str):
+            yield from result
         else:
-            # Fallback: simple template
-            return f"Thanks for your message! I'd love to help with {last_msg['text'][:30]}..."
-
-    def generate_stream(
-        self,
-        context: ConversationContext,
-        platform: str = "instagram",
-    ):
-        """Stream reply generation token-by-token."""
-        if not context.messages:
-            yield "Hi! How can I help?"
-            return
-
-        system = self.build_system(platform, context)
-        last_msg = context.messages[-1]
-
-        messages = [
-            {"role": "user", "content": f"Last message: {last_msg['text']}\n\nReply naturally:"}
-        ]
-
-        backend, tier = router.pick(messages)
-
-        if backend == "nvidia":
-            yield from nvidia.stream(messages, model_tier=tier, system=system)
-        elif backend == "gemini":
-            try:
-                from danphe.llm import gemini
-                yield from gemini.stream(messages, system=system)
-            except ImportError:
-                yield "Thanks for your message!"
-        else:
-            yield "Thanks for your message!"
+            yield result
 
 
 # ── Analytics & Memory ────────────────────────────────────────────────────────

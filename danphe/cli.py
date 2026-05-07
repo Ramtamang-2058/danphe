@@ -403,11 +403,14 @@ def _load_instagram_contacts() -> dict[str, str]:
 def _resolve_instagram_target(name: str, contacts: dict[str, str]) -> str:
     """Return Instagram username for a display name, falling back to the name itself."""
     key = name.lower().strip().lstrip("@")
-    # Exact match first, then substring match
+    # Exact match
     if key in contacts:
         return contacts[key]
+    # Segment match: only match if the contact key equals a whole underscore-delimited
+    # segment of the input (so "amod" matches "amod_xyz" but NOT "amodh_nepal")
+    segments = key.split("_")
     for display, username in contacts.items():
-        if key in display or display in key:
+        if display in segments:
             return username
     return name.lstrip("@")
 
@@ -445,14 +448,34 @@ def _cmd_instagram(args: list[str] | None = None) -> None:
             "  [cyan]4[/cyan]  Continuous loop (LLM watches + replies all day)\n"
         )
         mode = input("Choose mode [1-4]: ").strip()
+
+        ai_model = "auto"
+        personality = ""
+        if mode in ("3", "4"):
+            console.print(
+                "\n  [bold]AI model:[/bold]\n"
+                "  [cyan]1[/cyan]  auto  (Gemini → NVIDIA fallback) [default]\n"
+                "  [cyan]2[/cyan]  gemini  (Gemini only — fastest)\n"
+                "  [cyan]3[/cyan]  nvidia  (NVIDIA glm-4.7 — no quota)\n"
+            )
+            mc = input("Model [1-3, Enter=auto]: ").strip()
+            ai_model = {"2": "gemini", "3": "nvidia"}.get(mc, "auto")
+            console.print(f"  [dim]Model: {ai_model}[/dim]")
+
+            console.print(
+                "\n  [bold]Personality[/bold] [dim](Enter to use default — casual Nepali guy)[/dim]\n"
+                "  Examples:\n"
+                "  [dim]• funny and sarcastic, roast them gently[/dim]\n"
+                "  [dim]• friendly and warm like a close friend[/dim]\n"
+                "  [dim]• flirty but respectful[/dim]\n"
+                "  [dim]• very busy, short replies, a bit distracted[/dim]\n"
+            )
+            personality = input("Personality (or Enter for default): ").strip()
+            if personality:
+                console.print(f"  [dim]Personality: {personality}[/dim]")
     except KeyboardInterrupt:
         console.print("[dim]Cancelled.[/dim]")
         return
-
-    personality = (
-        "warm, professional, senior-friendly, funny and fruity — "
-        "like a smart friend who respects elders and sneaks in gentle wit"
-    )
 
     import subprocess
 
@@ -490,16 +513,16 @@ def _cmd_instagram(args: list[str] | None = None) -> None:
         )
 
     elif mode == "3":
-        console.print(f"  [cyan]Auto-reply once to @{username}...[/cyan]\n")
-        subprocess.run(
-            [
-                sys.executable, str(social_script),
-                "instagram", username,
-                "--auto-reply",
-                "--personality", personality,
-            ],
-            cwd=str(social_script.parent),
-        )
+        console.print(f"  [cyan]Auto-reply once to @{username} [{ai_model}]...[/cyan]\n")
+        cmd = [
+            sys.executable, str(social_script),
+            "instagram", username,
+            "--auto-reply",
+            "--model", ai_model,
+        ]
+        if personality:
+            cmd += ["--personality", personality]
+        subprocess.run(cmd, cwd=str(social_script.parent))
 
     elif mode == "4":
         try:
@@ -510,18 +533,18 @@ def _cmd_instagram(args: list[str] | None = None) -> None:
             return
         console.print(
             f"  [cyan]Starting continuous loop for @{username} "
-            f"(every {interval}s) — Ctrl+C to stop[/cyan]\n"
+            f"(every {interval}s, model={ai_model}) — Ctrl+C to stop[/cyan]\n"
         )
-        subprocess.run(
-            [
-                sys.executable, str(social_script),
-                "instagram", username,
-                "--continuous",
-                "--interval", str(interval),
-                "--personality", personality,
-            ],
-            cwd=str(social_script.parent),
-        )
+        cmd = [
+            sys.executable, str(social_script),
+            "instagram", username,
+            "--continuous",
+            "--interval", str(interval),
+            "--model", ai_model,
+        ]
+        if personality:
+            cmd += ["--personality", personality]
+        subprocess.run(cmd, cwd=str(social_script.parent))
     else:
         console.print("[yellow]Invalid choice.[/yellow]")
 

@@ -51,7 +51,6 @@ SCHEMAS: list[dict] = [
                     "timeout": {
                         "type": "integer",
                         "description": "Timeout in seconds (default 30)",
-                        "default": 30,
                     },
                 },
                 "required": ["command"],
@@ -66,7 +65,7 @@ SCHEMAS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Directory path", "default": "."},
+                    "path": {"type": "string", "description": "Directory path (default: current dir)"},
                     "pattern": {"type": "string", "description": "Optional glob pattern filter"},
                 },
             },
@@ -81,7 +80,7 @@ SCHEMAS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "pattern": {"type": "string", "description": "Text or regex pattern to search"},
-                    "path": {"type": "string", "description": "Directory to search in", "default": "."},
+                    "path": {"type": "string", "description": "Directory to search in (default: current dir)"},
                 },
                 "required": ["pattern"],
             },
