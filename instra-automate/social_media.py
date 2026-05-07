@@ -524,7 +524,37 @@ class InstagramDMClient:
         last_replied_text: str | None = None
 
         print(f"  Ready — {row_count} DOM nodes visible")
-        print(f"  Watching for new messages from {username} — Ctrl+C to stop\n")
+
+        # ── Immediate check: reply to any already-pending message ─────────────
+        _init_messages = await self._read_from_current_page(page, username)
+        _their = [m for m in _init_messages if m["sender"] != "self"]
+        if _their and _init_messages[-1]["sender"] != "self":
+            # Last message is theirs — reply right away, don't wait
+            _latest = _their[-1]
+            print(f"\n  [{datetime.now().strftime('%H:%M:%S')}] {username}: {_latest['text']}  (pending)")
+            _ctx = ConversationContext(username, "instagram", personality)
+            for _m in _init_messages[-15:]:
+                _ctx.add_message(_m["sender"], _m["text"], _m["timestamp"])
+            try:
+                _reply = generator.generate(_ctx, platform="instagram", max_length=250)
+                print(f"  Sending: {_reply}")
+                await self._send_from_current_page(page, _reply)
+                last_replied_text = _latest["text"]
+                await page.wait_for_timeout(1000)
+                row_count = await page.evaluate(_count_js)
+                print(f"  Sent.")
+            except RuntimeError as _e:
+                if "RATE_LIMITED" in str(_e):
+                    print(f"  [AI] Rate limited — skipping initial reply")
+                    last_replied_text = _latest["text"]
+                else:
+                    print(f"  [AI] Error: {_e}")
+        else:
+            # Last message is ours — remember it so we don't double-reply
+            if _their:
+                last_replied_text = _their[-1]["text"]
+
+        print(f"\n  Watching for new messages from {username} — Ctrl+C to stop\n")
 
         while True:
             try:
@@ -550,6 +580,10 @@ class InstagramDMClient:
 
                 latest = their_msgs[-1]
                 if latest["text"] == last_replied_text:
+                    continue
+
+                # Only reply if their message is actually the last thing in the thread
+                if messages[-1]["sender"] == "self":
                     continue
 
                 # New message from the other person
