@@ -149,14 +149,34 @@ def _read(path: str) -> str:
 
 
 def _write(path: str, content: str) -> str:
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    if p.exists():
-        bak = p.with_suffix(p.suffix + ".bak")
-        bak.write_text(p.read_text(errors="replace"))
-    p.write_text(content)
-    lines = content.count("\n") + 1
-    return f"Written {path} ({lines} lines)"
+    try:
+        p = Path(path)
+        # Validate path
+        if not path or path == "/":
+            return f"Error: invalid path: {path}"
+
+        # Create parent directories
+        p.parent.mkdir(parents=True, exist_ok=True)
+
+        # Create backup if file exists
+        if p.exists():
+            try:
+                bak = p.with_suffix(p.suffix + ".bak")
+                bak.write_text(p.read_text(errors="replace"), encoding="utf-8")
+            except Exception as e:
+                return f"Error: failed to backup {path}: {e}"
+
+        # Write the file with UTF-8 encoding
+        p.write_text(content, encoding="utf-8")
+        lines = content.count("\n") + 1
+        size_kb = len(content.encode("utf-8")) / 1024
+        return f"Written {path} ({lines} lines, {size_kb:.1f}KB)"
+    except PermissionError:
+        return f"Error: permission denied writing to {path}"
+    except OSError as e:
+        return f"Error: OS error writing to {path}: {e}"
+    except Exception as e:
+        return f"Error: failed to write {path}: {e}"
 
 
 def _bash(command: str, timeout: int = 30) -> str:
