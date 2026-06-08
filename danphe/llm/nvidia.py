@@ -62,6 +62,8 @@ def stream(
     """
     Stream text tokens from NVIDIA NIM.
     Yields string chunks (reasoning tokens skipped unless DEBUG=1).
+
+    Handles network interruptions gracefully.
     """
     client = _get_client()
     model = MODELS.get(model_tier, MODELS["fast"])
@@ -84,19 +86,29 @@ def stream(
 
     completion = client.chat.completions.create(**kwargs)
 
-    for chunk in completion:
-        if not getattr(chunk, "choices", None) or not chunk.choices:
-            continue
-        delta = chunk.choices[0].delta
-        if delta is None:
-            continue
+    try:
+        for chunk in completion:
+            if not getattr(chunk, "choices", None) or not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta is None:
+                continue
 
-        reasoning = getattr(delta, "reasoning_content", None)
-        if reasoning and DEBUG:
-            print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning and DEBUG:
+                print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
 
-        if getattr(delta, "content", None):
-            yield delta.content
+            if getattr(delta, "content", None):
+                yield delta.content
+    except (IOError, RuntimeError) as e:
+        # Network interruption
+        err_msg = str(e)
+        if "peer closed" in err_msg.lower() or "incomplete" in err_msg.lower():
+            yield f"\n[Stream interrupted: {err_msg}]"
+        else:
+            yield f"\n[Stream error: {err_msg}]"
+    except Exception as e:
+        yield f"\n[Unexpected streaming error: {e}]"
 
 
 def complete(
@@ -125,6 +137,8 @@ def stream_with_tools(
           dict keys: id, name, args (parsed dict)
 
     Falls back to plain streaming (no tools) if the API rejects tool params.
+
+    Handles network interruptions gracefully with error reporting.
     """
     client = _get_client()
     model = MODELS.get(model_tier, MODELS["fast"])
@@ -168,38 +182,50 @@ def stream_with_tools(
 
     accumulated: dict[int, dict] = {}
 
-    for chunk in completion:
-        if not getattr(chunk, "choices", None) or not chunk.choices:
-            continue
-        delta = chunk.choices[0].delta
-        if delta is None:
-            continue
+    try:
+        for chunk in completion:
+            if not getattr(chunk, "choices", None) or not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta is None:
+                continue
 
-        # Reasoning tokens (thinking mode)
-        reasoning = getattr(delta, "reasoning_content", None)
-        if reasoning and DEBUG:
-            print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
+            # Reasoning tokens (thinking mode)
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning and DEBUG:
+                print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
 
-        # Text content — yield immediately for live streaming
-        if getattr(delta, "content", None):
-            yield ("text", delta.content)
+            # Text content — yield immediately for live streaming
+            if getattr(delta, "content", None):
+                yield ("text", delta.content)
 
-        # Tool call deltas — accumulate across chunks
-        if getattr(delta, "tool_calls", None):
-            for tc in delta.tool_calls:
-                idx = tc.index
-                if idx not in accumulated:
-                    accumulated[idx] = {"id": "", "name": "", "args": ""}
-                if getattr(tc, "id", None):
-                    accumulated[idx]["id"] = tc.id
-                fn = getattr(tc, "function", None)
-                if fn:
-                    if getattr(fn, "name", None):
-                        accumulated[idx]["name"] = fn.name
-                    if getattr(fn, "arguments", None):
-                        accumulated[idx]["args"] += fn.arguments
+            # Tool call deltas — accumulate across chunks
+            if getattr(delta, "tool_calls", None):
+                for tc in delta.tool_calls:
+                    idx = tc.index
+                    if idx not in accumulated:
+                        accumulated[idx] = {"id": "", "name": "", "args": ""}
+                    if getattr(tc, "id", None):
+                        accumulated[idx]["id"] = tc.id
+                    fn = getattr(tc, "function", None)
+                    if fn:
+                        if getattr(fn, "name", None):
+                            accumulated[idx]["name"] = fn.name
+                        if getattr(fn, "arguments", None):
+                            accumulated[idx]["args"] += fn.arguments
+    except (IOError, RuntimeError) as e:
+        # Network interruption — yield error and any accumulated data
+        err_msg = str(e)
+        if "peer closed" in err_msg.lower() or "incomplete" in err_msg.lower():
+            yield ("text", f"\n[Stream interrupted: {err_msg}. Use tools if needed, or retry.]")
+        else:
+            yield ("text", f"\n[Stream error: {err_msg}]")
+        # Continue to emit any accumulated tool calls we have so far
+    except Exception as e:
+        # Unexpected error — report and continue
+        yield ("text", f"\n[Unexpected error during streaming: {e}]")
 
-    # Emit completed tool calls after the stream finishes
+    # Emit completed tool calls after the stream finishes (even if interrupted)
     for idx in sorted(accumulated.keys()):
         tc = accumulated[idx]
         try:

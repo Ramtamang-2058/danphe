@@ -131,6 +131,8 @@ def stream_with_tools(
     """
     Stream from Gemini with tool calling support.
     Yields ("text", str) and ("tool_call", dict).
+
+    Handles network interruptions gracefully.
     """
     from google.genai import types
 
@@ -152,21 +154,38 @@ def stream_with_tools(
         history=history,
         config=config,
     )
-    response = chat.send_message_stream(last_user or " ")
+
+    try:
+        response = chat.send_message_stream(last_user or " ")
+    except Exception as e:
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            raise  # Let the caller handle rate limits
+        yield ("text", f"\n[Gemini setup error: {e}]")
+        return
 
     tool_calls: list[dict] = []
 
-    for chunk in response:
-        for part in chunk.candidates[0].content.parts:
-            if hasattr(part, "function_call") and part.function_call and part.function_call.name:
-                fc = part.function_call
-                tool_calls.append({
-                    "id": str(uuid.uuid4()),
-                    "name": fc.name,
-                    "args": dict(fc.args),
-                })
-            elif getattr(part, "text", None):
-                yield ("text", part.text)
+    try:
+        for chunk in response:
+            if not getattr(chunk, "candidates", None) or not chunk.candidates:
+                continue
+            candidate = chunk.candidates[0]
+            if not getattr(candidate, "content", None) or not candidate.content.parts:
+                continue
+            for part in candidate.content.parts:
+                if hasattr(part, "function_call") and part.function_call and part.function_call.name:
+                    fc = part.function_call
+                    tool_calls.append({
+                        "id": str(uuid.uuid4()),
+                        "name": fc.name,
+                        "args": dict(fc.args),
+                    })
+                elif getattr(part, "text", None):
+                    yield ("text", part.text)
+    except Exception as e:
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            raise
+        yield ("text", f"\n[Gemini stream error: {e}]")
 
     for tc in tool_calls:
         yield ("tool_call", tc)

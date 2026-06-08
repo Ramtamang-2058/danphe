@@ -581,16 +581,17 @@ class InstagramDMClient:
                 messages = await self._read_from_current_page(page, username)
                 row_count = await page.evaluate(_count_js)
 
-                their_msgs = [m for m in messages if m["sender"] != "self"]
-                if not their_msgs:
-                    continue
-
-                latest = their_msgs[-1]
-                if latest["text"] == last_replied_text:
+                if not messages:
                     continue
 
                 # Only reply if their message is actually the last thing in the thread
-                if messages[-1]["sender"] == "self":
+                latest = messages[-1]
+                if latest["sender"] == "self":
+                    # We sent the last message, nothing to do
+                    continue
+
+                if latest["text"] == last_replied_text:
+                    # Already handled this specific message
                     continue
 
                 # New message from the other person

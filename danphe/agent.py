@@ -79,6 +79,8 @@ def run(
     on_text   — called with each streamed text chunk: on_text(chunk)
     on_tool   — called after each tool execution: on_tool(name, args, result, ok)
     Returns   — final response text (last assistant message)
+
+    Resilient to network errors — tool results are persisted even if streaming fails.
     """
     from danphe.llm import nvidia, gemini as gm
 
@@ -92,42 +94,55 @@ def run(
         text_this_turn = ""
 
         # ── Stream response ────────────────────────────────────────────────────
-        if backend == "nvidia":
-            events = nvidia.stream_with_tools(
-                messages,
-                model_tier=tier,
-                system=system,
-                tools=tool_lib.SCHEMAS,
-            )
-        elif backend == "gemini":
-            events = gm.stream_with_tools(
-                messages,
-                system=system,
-                tools=tool_lib.SCHEMAS,
-            )
-        else:
-            # Devloop bridge fallback
-            import subprocess
-            user_msgs = [m for m in messages if m.get("role") != "system"]
-            q = user_msgs[-1]["content"] if user_msgs else ""
-            
-            def _stream_devloop():
-                try:
-                    process = subprocess.Popen(["devloop", "ask", q], stdout=subprocess.PIPE, text=True)
-                    for line in process.stdout:
-                        yield ("text", line)
-                    process.wait()
-                except Exception as e:
-                    yield ("text", f"devloop bridge error: {e}")
-            events = _stream_devloop()
+        try:
+            if backend == "nvidia":
+                events = nvidia.stream_with_tools(
+                    messages,
+                    model_tier=tier,
+                    system=system,
+                    tools=tool_lib.SCHEMAS,
+                )
+            elif backend == "gemini":
+                events = gm.stream_with_tools(
+                    messages,
+                    system=system,
+                    tools=tool_lib.SCHEMAS,
+                )
+            else:
+                # Devloop bridge fallback
+                import subprocess
+                user_msgs = [m for m in messages if m.get("role") != "system"]
+                q = user_msgs[-1]["content"] if user_msgs else ""
 
-        for kind, data in events:
-            if kind == "text":
-                text_this_turn += data
-                if on_text:
-                    on_text(data)
-            elif kind == "tool_call":
-                tool_calls_this_turn.append(data)
+                def _stream_devloop():
+                    try:
+                        process = subprocess.Popen(["devloop", "ask", q], stdout=subprocess.PIPE, text=True)
+                        for line in process.stdout:
+                            yield ("text", line)
+                        process.wait()
+                    except Exception as e:
+                        yield ("text", f"devloop bridge error: {e}")
+                events = _stream_devloop()
+
+            for kind, data in events:
+                if kind == "text":
+                    text_this_turn += data
+                    if on_text:
+                        on_text(data)
+                elif kind == "tool_call":
+                    tool_calls_this_turn.append(data)
+        except (IOError, RuntimeError, BrokenPipeError) as e:
+            # Network error — report and allow recovery
+            err_msg = f"\n[Network error in iteration {iteration + 1}: {e}. Continuing with available tools or context.]"
+            text_this_turn += err_msg
+            if on_text:
+                on_text(err_msg)
+        except Exception as e:
+            # Unexpected error — report and break
+            err_msg = f"\n[Unexpected error in iteration {iteration + 1}: {e}]"
+            text_this_turn += err_msg
+            if on_text:
+                on_text(err_msg)
 
         final_text = text_this_turn
 
@@ -157,17 +172,28 @@ def run(
 
         # ── Execute tools, add results ─────────────────────────────────────────
         for tc in tool_calls_this_turn:
-            result = tool_lib.execute(tc["name"], tc["args"])
-            ok = not result.startswith("Error")
+            try:
+                result = tool_lib.execute(tc["name"], tc["args"])
+                ok = not result.startswith("Error")
 
-            if on_tool:
-                on_tool(tc["name"], tc["args"], result, ok)
+                if on_tool:
+                    on_tool(tc["name"], tc["args"], result, ok)
 
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "content": result,
-            })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": result,
+                })
+            except Exception as e:
+                # Tool execution error
+                error_result = f"Error executing {tc['name']}: {e}"
+                if on_tool:
+                    on_tool(tc["name"], tc["args"], error_result, False)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": error_result,
+                })
 
     return final_text
 
