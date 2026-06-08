@@ -267,7 +267,6 @@ class InstagramDMClient:
         raw: list[dict] = await page.evaluate("""
         () => {
             const results = [];
-            const seen = new Set();
             const viewWidth = window.innerWidth;
 
             // Detect the right edge of the sidebar/conversation-list panel dynamically
@@ -312,13 +311,13 @@ class InstagramDMClient:
                 return false;
             }
 
-            const nodes = Array.from(document.querySelectorAll('[dir="auto"]'));
+            const allNodes = Array.from(document.querySelectorAll('[dir="auto"]'));
+            // Use leaf nodes only to avoid nested duplicates
+            const nodes = allNodes.filter(n => !n.querySelector('[dir="auto"]'));
 
             for (const node of nodes) {
                 const text = node.textContent.trim();
                 if (!text || text.length < 2) continue;
-                if (seen.has(text)) continue;
-                seen.add(text);
 
                 const rect = node.getBoundingClientRect();
                 if (rect.width === 0 || rect.height === 0) continue;
@@ -385,6 +384,9 @@ class InstagramDMClient:
         if raw:
             senders = set(m["sender"] for m in raw)
             print(f"  [history] Senders: {', '.join(senders)}", flush=True)
+            # Log the last 2 messages for better context
+            for msg in raw[-2:]:
+                print(f"    - {msg['sender']}: {msg['text'][:50]}...", flush=True)
         else:
             # Diagnostic: count dir="auto" nodes so we know if DOM is empty or wrong
             count = await page.evaluate(
@@ -531,8 +533,8 @@ class InstagramDMClient:
                 print(f"  Sent.")
             except RuntimeError as _e:
                 if "RATE_LIMITED" in str(_e):
-                    print(f"  [AI] Rate limited — skipping initial reply")
-                    last_replied_text = _latest["text"]
+                    print(f"  [AI] Rate limited — will retry when next message arrives or timeout")
+                    # last_replied_text = _latest["text"]  <-- Removed to allow retry
                 else:
                     print(f"  [AI] Error: {_e}")
         else:
@@ -567,10 +569,12 @@ class InstagramDMClient:
                 latest = messages[-1]
                 if latest["sender"] == "self":
                     # We sent the last message, nothing to do
+                    print(f"  [skip] Last message is from self: \"{latest['text'][:30]}...\"")
                     continue
 
                 if latest["text"] == last_replied_text:
                     # Already handled this specific message
+                    print(f"  [skip] Already replied to: \"{latest['text'][:30]}...\"")
                     continue
 
                 # New message from the other person
@@ -585,9 +589,9 @@ class InstagramDMClient:
                     reply = generator.generate(ctx, platform="instagram", max_length=250)
                 except RuntimeError as ai_err:
                     if "RATE_LIMITED" in str(ai_err):
-                        print(f"  [AI] Rate limited{str(ai_err).replace('RATE_LIMITED', '')} — skipping, still watching")
-                        last_replied_text = latest["text"]  # don't retry same msg
-                        row_count = await page.evaluate(_count_js)
+                        print(f"  [AI] Rate limited{str(ai_err).replace('RATE_LIMITED', '')} — will retry later")
+                        # last_replied_text = latest["text"]  <-- Removed to allow retry
+                        await asyncio.sleep(10) # extra breather
                         continue
                     raise
                 print(f"  Sending: {reply}")
@@ -892,3 +896,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+  asyncio.run(main())
