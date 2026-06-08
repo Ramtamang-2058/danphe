@@ -14,6 +14,7 @@ load_dotenv(Path(__file__).parent.parent / ".env", override=False)
 # ── API keys ──────────────────────────────────────────────────────────────────
 NVIDIA_API_KEY  = os.getenv("NVIDIA_API_KEY", "")
 GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
+GROQ_API_KEY    = os.getenv("GROQ_API_KEY", "")
 FORCE_MODEL     = os.getenv("DANPHE_MODEL", "")
 MAX_TOKENS      = int(os.getenv("DANPHE_MAX_TOKENS", "16384"))
 DEBUG           = os.getenv("DANPHE_DEBUG", "").lower() in ("1", "true", "yes")

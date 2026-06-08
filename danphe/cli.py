@@ -293,11 +293,11 @@ def _cmd_help() -> None:
 def _cmd_model(args: list[str], session: list[dict]) -> None:
     if args:
         target = args[0].lower().strip()
-        if target in ["gemini", "fast", "glm", "long", "deepseek", "reasoning", "nemotron", "devloop", "auto"]:
+        if target in ["groq", "gemini", "fast", "glm", "long", "deepseek", "reasoning", "nemotron", "devloop", "auto"]:
             config.FORCE_MODEL = "" if target == "auto" else target
             console.print(f"  [green]✓ Setup model routing to[/green] [cyan]{target}[/cyan]")
         else:
-            console.print(f"  [yellow]Unknown model option: {target}. Valid: auto, gemini, fast, long, reasoning, devloop[/yellow]")
+            console.print(f"  [yellow]Unknown model option: {target}. Valid: auto, groq, gemini, fast, long, reasoning, devloop[/yellow]")
         return
 
     content = " ".join(
@@ -712,6 +712,8 @@ def models() -> None:
     backend, tier = router.pick([{"role": "user", "content": "hi"}])
     console.print(f"[bold]Active route:[/bold] [cyan]{router.describe(backend, tier)}[/cyan]")
 
+    if not config.GROQ_API_KEY:
+        console.print("[yellow]  ⚠  GROQ_API_KEY not set[/yellow]")
     if not config.NVIDIA_API_KEY:
         console.print("[yellow]  ⚠  NVIDIA_API_KEY not set[/yellow]")
     if not config.GEMINI_API_KEY:

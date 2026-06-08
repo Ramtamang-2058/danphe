@@ -93,8 +93,8 @@ class ReplyGenerator:
         ]
         return "\n".join(lines)
 
-    # Class-level model preference — set via ReplyGenerator(model="nvidia"|"gemini"|"auto")
-    SUPPORTED_MODELS = ("auto", "gemini", "nvidia")
+    # Class-level model preference — set via ReplyGenerator(model="groq"|"nvidia"|"gemini"|"auto")
+    SUPPORTED_MODELS = ("auto", "groq", "gemini", "nvidia")
 
     def __init__(self, personality: str = "", system_prompt: str = "", model: str = "auto"):
         if personality:
@@ -107,6 +107,18 @@ class ReplyGenerator:
 
     # Use the lite model for social replies — 30× more free quota than flash
     GEMINI_SOCIAL_MODEL = "gemini-2.0-flash-lite"
+
+    def _call_groq(self, messages: list[dict], system: str, stream: bool):
+        """Try Groq Llama 3.3. Returns text or stream."""
+        from danphe.llm import groq
+        try:
+            if stream:
+                return groq.stream(messages, system=system)
+            return groq.complete(messages, system=system)
+        except Exception as e:
+            if "429" in str(e) or "RATE_LIMITED" in str(e).upper():
+                raise RuntimeError(f"RATE_LIMITED: {e}")
+            raise
 
     def _call_gemini(self, messages: list[dict], system: str, stream: bool):
         """Try Gemini Flash Lite. Raises on 429 as RuntimeError('RATE_LIMITED ...')."""
@@ -162,13 +174,28 @@ class ReplyGenerator:
             }
         ]
 
+        if self.model == "groq":
+            return self._call_groq(messages, system, stream)
+
         if self.model == "nvidia":
             return self._call_nvidia(messages, system, stream)
 
         if self.model == "gemini":
             return self._call_gemini(messages, system, stream)
 
-        # auto: Gemini first (faster), NVIDIA fast as fallback
+        # auto: Groq -> Gemini -> NVIDIA
+        from danphe import config as _cfg
+        if _cfg.GROQ_API_KEY:
+            try:
+                return self._call_groq(messages, system, stream)
+            except RuntimeError as e:
+                if "RATE_LIMITED" in str(e):
+                    print(f"  [groq] {e} — falling back")
+                else:
+                    raise
+            except Exception as e:
+                print(f"  [groq] failed: {e} — falling back")
+
         try:
             return self._call_gemini(messages, system, stream)
         except RuntimeError as e:

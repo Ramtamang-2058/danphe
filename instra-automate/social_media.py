@@ -360,36 +360,15 @@ class InstagramDMClient:
                 // Skip noise (timestamps, footer labels, UI chrome)
                 if (isNoise(text)) continue;
 
-                // Sender: look for an avatar link in the surrounding container
-                let senderName = null;
-                let ancestor = node.parentElement;
-                for (let d = 0; d < 12 && ancestor; d++) {
-                    const link = ancestor.querySelector('a[href^="/"]');
-                    if (link) {
-                        const href = link.getAttribute('href') || '';
-                        const m = href.match(/^[/]([^/]+)[/]?$/);
-                        if (m && m[1] && !SKIP_SLUGS.has(m[1])) {
-                            senderName = m[1];
-                            break;
-                        }
-                    }
-                    ancestor = ancestor.parentElement;
-                }
-
                 // Sender resolution:
-                // 1. If avatar/profile link found near message → it's from them (never self)
-                // 2. Otherwise fall back to position (self = right-aligned, > 60% of viewport)
+                // 1. Position-based (self = right-aligned, > 60% of viewport)
+                // 2. Everything else is 'other' (to be replaced by the target username)
                 const midX = rect.left + rect.width / 2;
-                let isSelf;
-                if (senderName) {
-                    isSelf = false;  // avatar link found → definitely not self
-                } else {
-                    isSelf = midX > viewWidth * 0.6;
-                }
+                let isSelf = midX > viewWidth * 0.6;
 
                 results.push({
                     text,
-                    sender: isSelf ? 'self' : (senderName || 'other'),
+                    sender: isSelf ? 'self' : 'other',
                     timestamp: new Date().toISOString(),
                 });
             }
@@ -397,7 +376,7 @@ class InstagramDMClient:
         }
         """)
 
-        # Fallback: replace generic 'other' with the known username
+        # Replace generic 'other' with the known username
         for msg in raw:
             if msg["sender"] == "other":
                 msg["sender"] = username
