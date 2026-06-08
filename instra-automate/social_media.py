@@ -803,7 +803,7 @@ async def main():
         idx = sys.argv.index("--model")
         if idx + 1 < len(sys.argv):
             m = sys.argv[idx + 1].lower()
-            if m in ("gemini", "nvidia", "auto"):
+            if m in ("groq", "gemini", "nvidia", "auto"):
                 model = m
             else:
                 print(f"  [warn] Unknown --model '{m}', using auto")
