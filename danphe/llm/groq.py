@@ -111,13 +111,36 @@ def stream(
     messages: list[dict],
     system: str = "",
     model: str = "llama-3.3-70b-versatile",
+    max_tokens: int | None = None,
 ) -> Iterator[str]:
     """Plain text stream (no tools). Yields string chunks."""
-    for kind, data in stream_with_tools(messages, system=system, tools=None, model=model):
-        if kind == "text":
-            yield data
+    client = _get_client()
+    all_messages = _build_messages(messages, system)
+    
+    kwargs = dict(
+        model=model,
+        messages=all_messages,
+        temperature=1,
+        max_tokens=max_tokens or MAX_TOKENS,
+        stream=True,
+    )
+    
+    try:
+        completion = client.chat.completions.create(**kwargs)
+        for chunk in completion:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+    except Exception as e:
+        if "429" in str(e) or "rate_limit" in str(e).lower():
+            raise RuntimeError(f"RATE_LIMITED: {e}")
+        yield f"\n[Groq error: {e}]"
 
 
-def complete(messages: list[dict], system: str = "", model: str = "llama-3.3-70b-versatile") -> str:
+def complete(
+    messages: list[dict], 
+    system: str = "", 
+    model: str = "llama-3.3-70b-versatile",
+    max_tokens: int | None = None,
+) -> str:
     """Full text completion."""
-    return "".join(stream(messages, system=system, model=model))
+    return "".join(stream(messages, system=system, model=model, max_tokens=max_tokens))

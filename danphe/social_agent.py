@@ -113,8 +113,8 @@ class ReplyGenerator:
         from danphe.llm import groq
         try:
             if stream:
-                return groq.stream(messages, system=system)
-            return groq.complete(messages, system=system)
+                return groq.stream(messages, system=system, max_tokens=300)
+            return groq.complete(messages, system=system, max_tokens=300)
         except Exception as e:
             if "429" in str(e) or "RATE_LIMITED" in str(e).upper():
                 raise RuntimeError(f"RATE_LIMITED: {e}")
@@ -125,8 +125,8 @@ class ReplyGenerator:
         from danphe.llm import gemini
         try:
             if stream:
-                return gemini.stream(messages, system=system, model=self.GEMINI_SOCIAL_MODEL)
-            return gemini.complete(messages, system=system, model=self.GEMINI_SOCIAL_MODEL)
+                return gemini.stream(messages, system=system, model=self.GEMINI_SOCIAL_MODEL, max_tokens=300)
+            return gemini.complete(messages, system=system, model=self.GEMINI_SOCIAL_MODEL, max_tokens=300)
         except Exception as e:
             err = str(e)
             if "429" in err or "RESOURCE_EXHAUSTED" in err:
