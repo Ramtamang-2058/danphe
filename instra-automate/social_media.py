@@ -377,17 +377,19 @@ class InstagramDMClient:
         """)
 
         # Replace generic 'other' with the known username
+        total_chars = 0
         for msg in raw:
             if msg["sender"] == "other":
                 msg["sender"] = username
+            total_chars += len(msg["text"])
 
-        print(f"  [history] {len(raw)} messages loaded", flush=True)
+        print(f"  [history] {len(raw)} messages loaded ({total_chars} total chars)", flush=True)
         if raw:
             senders = set(m["sender"] for m in raw)
             print(f"  [history] Senders: {', '.join(senders)}", flush=True)
-            # Log the last 2 messages for better context
+            # Log the last 2 messages with lengths
             for msg in raw[-2:]:
-                print(f"    - {msg['sender']}: {msg['text'][:50]}...", flush=True)
+                print(f"    - {msg['sender']} ({len(msg['text'])} chars): {msg['text'][:50]}...", flush=True)
         else:
             # Diagnostic: count dir="auto" nodes so we know if DOM is empty or wrong
             count = await page.evaluate(
