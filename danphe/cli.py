@@ -454,12 +454,13 @@ def _cmd_instagram(args: list[str] | None = None) -> None:
         if mode in ("3", "4"):
             console.print(
                 "\n  [bold]AI model:[/bold]\n"
-                "  [cyan]1[/cyan]  auto  (Gemini → NVIDIA fallback) [default]\n"
-                "  [cyan]2[/cyan]  gemini  (Gemini only — fastest)\n"
-                "  [cyan]3[/cyan]  nvidia  (NVIDIA glm-4.7 — no quota)\n"
+                "  [cyan]1[/cyan]  auto  (Groq → Gemini → NVIDIA) [default]\n"
+                "  [cyan]2[/cyan]  groq  (Groq Llama 3.3 — fastest)\n"
+                "  [cyan]3[/cyan]  gemini  (Gemini only)\n"
+                "  [cyan]4[/cyan]  nvidia  (NVIDIA — no quota)\n"
             )
-            mc = input("Model [1-3, Enter=auto]: ").strip()
-            ai_model = {"2": "gemini", "3": "nvidia"}.get(mc, "auto")
+            mc = input("Model [1-4, Enter=auto]: ").strip()
+            ai_model = {"2": "groq", "3": "gemini", "4": "nvidia"}.get(mc, "auto")
             console.print(f"  [dim]Model: {ai_model}[/dim]")
 
             console.print(
