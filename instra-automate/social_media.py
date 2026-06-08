@@ -297,7 +297,8 @@ class InstagramDMClient:
                 // Instagram UI chrome
                 if (/^Active\\s/.test(text)) return true;
                 if (/^©/.test(text)) return true;
-                if (/^(Threads|Help|Privacy|Terms|About|Jobs|Press|API|Locations|Music|Contact|Lite|Meta Verified|Contact Uploading|Non-Users|Messages|Requests|Seen$|Delivered$|Sent$)/.test(text)) return true;
+                if (/^Seen($|\\s+\\d+|\\s+just now)/.test(text)) return true;
+                if (/^(Threads|Help|Privacy|Terms|About|Jobs|Press|API|Locations|Music|Contact|Lite|Meta Verified|Contact Uploading|Non-Users|Messages|Requests|Delivered$|Sent$)/.test(text)) return true;
                 // Reel / story share noise
                 if (/replied to (you|your story|a story)/i.test(text)) return true;
                 if (/reacted to (your|a)/i.test(text)) return true;
