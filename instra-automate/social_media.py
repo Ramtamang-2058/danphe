@@ -557,12 +557,13 @@ class InstagramDMClient:
                 except PlaywrightTimeoutError:
                     continue  # no new node yet — keep waiting
 
-                await page.wait_for_timeout(600)  # let DOM settle
+                await page.wait_for_timeout(1200)  # let DOM settle
 
                 messages = await self._read_from_current_page(page, username)
                 row_count = await page.evaluate(_count_js)
 
                 if not messages:
+                    print(f"  [debug] No messages parsed after DOM change")
                     continue
 
                 # Only reply if their message is actually the last thing in the thread
@@ -896,4 +897,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-  asyncio.run(main())
