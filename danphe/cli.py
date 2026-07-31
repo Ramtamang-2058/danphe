@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 from queue import Empty, Queue
 
@@ -75,18 +76,16 @@ def _insert_newline(event):
 def _banner() -> None:
     cwd = Path.cwd()
     has_nv = bool(config.NVIDIA_API_KEY)
-    has_gm = bool(config.GEMINI_API_KEY)
+    has_gq = bool(config.GROQ_API_KEY)
     claude_md = load_claude_md(cwd)
     skills = load_skills()
 
     backend_parts: list[str] = []
-    if has_nv:
-        _, tier = router.pick([{"role": "user", "content": "hi"}])
-        backend_parts.append(f"[green]NVIDIA[/green] [dim]({tier})[/dim]")
-    if has_gm:
-        backend_parts.append("[green]Gemini[/green]")
+    if has_nv or has_gq:
+        backend, tier = router.pick([{"role": "user", "content": "hi"}])
+        backend_parts.append(f"[green]{router.describe(backend, tier)}[/green]")
     if not backend_parts:
-        backend_parts.append("[yellow]no API keys[/yellow]")
+        backend_parts.append("[yellow]no API keys — devloop bridge[/yellow]")
 
     status_parts = [f"[dim]{cwd}[/dim]"]
     if claude_md:
@@ -141,12 +140,11 @@ def _resolve_at_files(text: str) -> tuple[str, str]:
 
 # ── Agent runner with animated display ────────────────────────────────────────
 
-def _run_agent(user_input: str, session: list[dict], cwd: Path) -> str:
+def _run_agent(user_input: str, session: list[dict], cwd: Path, label: str = "") -> str:
     """
     Send user_input through the agent loop.
     Shows mist animation while thinking, streams text as it arrives,
-    shows tool calls inline.
-    Returns final response text.
+    shows tool calls inline. Returns final response text.
     """
     from danphe import agent
 
@@ -156,8 +154,8 @@ def _run_agent(user_input: str, session: list[dict], cwd: Path) -> str:
     def on_text(chunk: str) -> None:
         q.put(("text", chunk))
 
-    def on_tool(name: str, args: dict, result: str, ok: bool) -> None:
-        q.put(("tool", name, args, result, ok))
+    def on_tool(name: str, args: dict, result: str, ok: bool, elapsed: float) -> None:
+        q.put(("tool", name, args, result, ok, elapsed))
 
     def _agent_thread() -> None:
         try:
@@ -173,6 +171,7 @@ def _run_agent(user_input: str, session: list[dict], cwd: Path) -> str:
     thinking_display = ui._Thinking("thinking")
     text_parts: list[str] = []
     first_output = False
+    live_active = True
 
     console.print()
 
@@ -194,22 +193,34 @@ def _run_agent(user_input: str, session: list[dict], cwd: Path) -> str:
             if not first_output:
                 first_output = True
                 live.stop()
+                live_active = False
 
             if kind == "text":
+                if live_active:
+                    live.stop()
+                    live_active = False
                 chunk: str = item[1]
                 text_parts.append(chunk)
                 console.print(chunk, end="", markup=False, highlight=False)
 
             elif kind == "tool":
-                _, name, args, result, ok = item
+                _, name, args, result, ok, elapsed = item
                 # Blank line before tool block if text was streaming
                 if text_parts and not text_parts[-1].endswith("\n"):
                     console.print()
                 console.print()
-                ui.show_tool(name, args)
+                ui.show_tool(name, args, elapsed)
                 ui.show_result(result, ok)
+                # Agent is likely mid-loop — show mist again for the next LLM call
+                if not done_event.is_set():
+                    thinking_display.label = "thinking"
+                    live.start()
+                    live_active = True
 
             elif kind == "error":
+                if live_active:
+                    live.stop()
+                    live_active = False
                 console.print(f"\n[red]Error: {item[1]}[/red]")
 
     if text_parts:
@@ -283,7 +294,7 @@ def _cmd_help() -> None:
             "  [cyan]Ctrl+C[/cyan]         Cancel (at prompt) / interrupt\n"
             "  [cyan]Ctrl+D[/cyan]         Exit\n\n"
             "[bold]Model is auto-picked[/bold] based on token count.\n"
-            "Override with [cyan]DANPHE_MODEL=fast|long|reasoning|gemini[/cyan] in .env",
+            "Override with [cyan]DANPHE_MODEL=fast|long|reasoning|groq[/cyan] in .env",
             border_style="dim",
             title="[cyan]danphe help[/cyan]",
         )
@@ -293,11 +304,11 @@ def _cmd_help() -> None:
 def _cmd_model(args: list[str], session: list[dict]) -> None:
     if args:
         target = args[0].lower().strip()
-        if target in ["groq", "gemini", "fast", "glm", "long", "deepseek", "reasoning", "nemotron", "devloop", "auto"]:
+        if target in ["groq", "fast", "glm", "long", "deepseek", "reasoning", "nemotron", "devloop", "auto"]:
             config.FORCE_MODEL = "" if target == "auto" else target
             console.print(f"  [green]✓ Setup model routing to[/green] [cyan]{target}[/cyan]")
         else:
-            console.print(f"  [yellow]Unknown model option: {target}. Valid: auto, groq, gemini, fast, long, reasoning, devloop[/yellow]")
+            console.print(f"  [yellow]Unknown model option: {target}. Valid: auto, groq, fast, long, reasoning, devloop[/yellow]")
         return
 
     content = " ".join(
@@ -307,7 +318,7 @@ def _cmd_model(args: list[str], session: list[dict]) -> None:
     label = router.describe(backend, tier)
     tok = sum(len(m.get("content", "")) for m in session if isinstance(m.get("content"), str)) // 4
     console.print(f"  [dim]route:[/dim] [cyan]{label}[/cyan]  [dim]est. {tok} tokens in session[/dim]")
-    console.print("  [dim]use /model <name> to switch (e.g. /model gemini, /model fast, /model auto)[/dim]")
+    console.print("  [dim]use /model <name> to switch (e.g. /model fast, /model long, /model auto)[/dim]")
 
 
 def _cmd_cost(session: list[dict]) -> None:
@@ -334,7 +345,7 @@ def _cmd_compact(session: list[dict], cwd: Path) -> None:
         console.print("[dim]Nothing to compact yet[/dim]")
         return
 
-    from danphe.llm import nvidia, gemini as gm, groq as gq
+    from danphe.llm import nvidia, groq as gq
 
     summary_msgs = list(session) + [
         {"role": "user", "content": (
@@ -352,8 +363,7 @@ def _cmd_compact(session: list[dict], cwd: Path) -> None:
         elif backend == "groq":
             summary = gq.complete(summary_msgs)
         else:
-            user_msgs = [m for m in summary_msgs if m.get("role") != "system"]
-            summary = gm.complete(user_msgs)
+            summary = nvidia.complete(summary_msgs, model_tier="long")
 
     old_count = len(session)
     session.clear()
@@ -456,13 +466,12 @@ def _cmd_instagram(args: list[str] | None = None) -> None:
         if mode in ("3", "4"):
             console.print(
                 "\n  [bold]AI model:[/bold]\n"
-                "  [cyan]1[/cyan]  auto  (Groq → Gemini → NVIDIA) [default]\n"
+                "  [cyan]1[/cyan]  auto  (Groq → NVIDIA) [default]\n"
                 "  [cyan]2[/cyan]  groq  (Groq Llama 3.3 — fastest)\n"
-                "  [cyan]3[/cyan]  gemini  (Gemini only)\n"
-                "  [cyan]4[/cyan]  nvidia  (NVIDIA — no quota)\n"
+                "  [cyan]3[/cyan]  nvidia  (NVIDIA — no quota)\n"
             )
-            mc = input("Model [1-4, Enter=auto]: ").strip()
-            ai_model = {"2": "groq", "3": "gemini", "4": "nvidia"}.get(mc, "auto")
+            mc = input("Model [1-3, Enter=auto]: ").strip()
+            ai_model = {"2": "groq", "3": "nvidia"}.get(mc, "auto")
             console.print(f"  [dim]Model: {ai_model}[/dim]")
 
             console.print(
@@ -646,7 +655,14 @@ def repl() -> None:
         label = router.describe(backend, tier)
         console.print(f"\n  [dim]{label}[/dim]")
 
+        t0 = time.time()
         _run_agent(line, session, cwd)
+        elapsed = time.time() - t0
+
+        # Per-turn footer: model · elapsed · token estimate
+        last = session[-1] if session else {}
+        if last.get("role") == "assistant" and isinstance(last.get("content"), str):
+            ui.reply_footer(label, elapsed, max(1, len(last["content"]) // 4))
 
         console.print()
 
@@ -656,7 +672,7 @@ def repl() -> None:
 @click.group(invoke_without_command=True)
 @click.pass_context
 def main(ctx: click.Context) -> None:
-    """Danphe — agentic dev CLI powered by NVIDIA NIM + Gemini."""
+    """Danphe — agentic dev CLI powered by NVIDIA NIM + Groq."""
     if ctx.invoked_subcommand is None:
         repl()
 
@@ -697,7 +713,12 @@ def run(task: tuple[str, ...], files: tuple[str, ...], max_iter: int) -> None:
     session.append({"role": "user", "content": t})
     label = router.describe(*router.pick(session))
     console.print(f"\n  [dim]{label}[/dim]")
+    t0 = time.time()
     _run_agent(t, session, cwd)
+    elapsed = time.time() - t0
+    last = session[-1] if session else {}
+    if last.get("role") == "assistant" and isinstance(last.get("content"), str):
+        ui.reply_footer(label, elapsed, max(1, len(last["content"]) // 4))
 
 
 @main.command()
@@ -708,8 +729,9 @@ def models() -> None:
     console.print("\n[bold]NVIDIA NIM (free tier):[/bold]")
     for tier, mid in nv.items():
         console.print(f"  [cyan]{tier:12}[/cyan] {mid}")
-    console.print("\n[bold]Fallback:[/bold]")
-    console.print("  [cyan]gemini      [/cyan] gemini-2.0-flash (free)")
+    console.print()
+    console.print("[bold]Fast path:[/bold]")
+    console.print("  [cyan]groq         [/cyan] llama-3.3-70b (small convos)")
     console.print()
 
     backend, tier = router.pick([{"role": "user", "content": "hi"}])
@@ -719,8 +741,10 @@ def models() -> None:
         console.print("[yellow]  ⚠  GROQ_API_KEY not set[/yellow]")
     if not config.NVIDIA_API_KEY:
         console.print("[yellow]  ⚠  NVIDIA_API_KEY not set[/yellow]")
-    if not config.GEMINI_API_KEY:
-        console.print("[yellow]  ⚠  GEMINI_API_KEY not set[/yellow]")
+    blocked = router.blocked()
+    if blocked:
+        console.print("[yellow]  ⚠  rate-limited this session:[/yellow] "
+                      + ", ".join(f"{b}" for b in blocked))
     console.print()
 
 

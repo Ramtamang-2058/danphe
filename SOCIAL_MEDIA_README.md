@@ -6,7 +6,7 @@ A powerful, context-aware social media automation system that:
 - **Generates intelligent replies** with personality customization
 - **Sends replies automatically** with no timeouts
 - **Remembers history** across sessions using persistent memory
-- **Routes models intelligently** (NVIDIA NIM → Gemini → fallback)
+- **Routes models intelligently** (Groq → NVIDIA NIM → fallback)
 
 ## Features
 
@@ -117,7 +117,8 @@ danphe/
 ├── social_config.py         # Personality & platform config
 └── llm/
     ├── nvidia.py            # NVIDIA NIM backend
-    └── gemini.py            # Google Gemini fallback
+    ├── groq.py              # Groq fast path
+    └── retry.py             # Rate-limit backoff
 
 instra-automate/
 └── social_media.py          # Browser automation + CLI
@@ -179,8 +180,8 @@ await client.close()
 ```bash
 # .env or ~/.danphe/.env
 NVIDIA_API_KEY=xxx        # For NVIDIA NIM models
-GEMINI_API_KEY=xxx        # For Gemini fallback
-DANPHE_MODEL=long         # Force model: fast|long|reasoning|gemini
+GROQ_API_KEY=gsk_xxx      # For Groq fast path
+DANPHE_MODEL=long         # Force model: fast|long|reasoning|groq
 DANPHE_MAX_TOKENS=16384   # Max tokens in response
 DANPHE_DEBUG=1            # Show debug info
 ```
@@ -205,13 +206,16 @@ User's question (~100-500 chars with context)
     ↓
 Danphe Router estimates tokens
     ↓
+Groq available?
+├─ < 12K tokens → Llama-3.3-70b (fastest)
+    ↓
 NVIDIA available?
 ├─ < 6K tokens → GLM-4.7 (fastest)
 ├─ < 60K tokens → DeepSeek V3 (best for code/long)
 └─ > 60K tokens → Nemotron (heavy reasoning)
     ↓
-NVIDIA unavailable?
-└─ → Gemini Flash (fallback)
+No keys?
+└─ → devloop bridge (local)
 ```
 
 ## Example: Intelligent Context-Aware Reply
@@ -295,7 +299,7 @@ export DANPHE_DEBUG=1
 
 # Show model selection
 python social_media.py instagram @user --auto-reply
-# Output: [danphe debug] model=deepseek-ai/deepseek-v3-0324
+# Output: [danphe debug] model=deepseek-ai/deepseek-v4-flash
 
 # View conversation history
 python -c "

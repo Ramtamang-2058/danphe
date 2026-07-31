@@ -272,7 +272,7 @@ def main():
         print("  3. Auto-reply: python instra-automate/social_media.py instagram @user --auto-reply")
         print("\nFor production:")
         print("  - Configure personality in code or via CLI")
-        print("  - Set LLM API keys (NVIDIA_API_KEY, GEMINI_API_KEY)")
+        print("  - Set LLM API keys (NVIDIA_API_KEY, GROQ_API_KEY)")
         print("  - Enable persistent memory via SessionMemory")
         print("\nSee SOCIAL_MEDIA_README.md for full documentation")
         print("="*60 + "\n")

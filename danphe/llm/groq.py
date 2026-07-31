@@ -13,6 +13,21 @@ from danphe.llm.retry import with_backoff
 # Groq on_demand tier counts output tokens against the per-minute budget.
 MAX_OUTPUT = 6144
 
+# Note appended when Groq rejects a tool call for bad argument types.
+_SCHEMA_FIX_NOTE = (
+    "[System: your previous tool call was rejected because its arguments did not "
+    "match the tool schema (e.g. 'timeout' must be an integer number of seconds, "
+    "not a string like '60s'). Re-read the tool schemas and retry with correct "
+    "argument types.]"
+)
+
+
+def _is_schema_error(e: Exception) -> bool:
+    err = str(e).lower()
+    return "did not match schema" in err or (
+        "tool call" in err and "validation" in err
+    )
+
 _client = None
 
 def _get_client():
@@ -62,44 +77,60 @@ def stream_with_tools(
     if DEBUG:
         print(f"[danphe debug] groq model={model} tools={bool(tools)}")
 
-    try:
-        completion = with_backoff(lambda: client.chat.completions.create(**kwargs))
-    except Exception as e:
-        if "429" in str(e) or "rate_limit" in str(e).lower():
-            raise RuntimeError(f"RATE_LIMITED: {e}")
-        yield ("text", f"\n[Groq error: {e}]")
-        return
+    # Retry the call if Groq rejects a tool call for bad argument types —
+    # the model gets one chance to fix its arguments instead of aborting.
+    for attempt in range(3):
+        try:
+            completion = with_backoff(lambda: client.chat.completions.create(**kwargs))
+        except Exception as e:
+            if "429" in str(e) or "rate_limit" in str(e).lower():
+                raise RuntimeError(f"RATE_LIMITED: {e}")
+            yield ("text", f"\n[Groq error: {e}]")
+            return
 
-    accumulated: dict[int, dict] = {}
+        accumulated: dict[int, dict] = {}
+        retry_needed = False
 
-    try:
-        for chunk in completion:
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-            
-            # Text content
-            if hasattr(delta, "content") and delta.content:
-                yield ("text", delta.content)
+        try:
+            for chunk in completion:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
 
-            # Tool call deltas
-            if hasattr(delta, "tool_calls") and delta.tool_calls:
-                for tc in delta.tool_calls:
-                    idx = tc.index
-                    if idx not in accumulated:
-                        accumulated[idx] = {"id": "", "name": "", "args": ""}
-                    if hasattr(tc, "id") and tc.id:
-                        accumulated[idx]["id"] = tc.id
-                    fn = getattr(tc, "function", None)
-                    if fn:
-                        if hasattr(fn, "name") and fn.name:
-                            accumulated[idx]["name"] = fn.name
-                        if hasattr(fn, "arguments") and fn.arguments:
-                            accumulated[idx]["args"] += fn.arguments
-    except Exception as e:
-        if "429" in str(e) or "rate_limit" in str(e).lower():
-            raise RuntimeError(f"RATE_LIMITED: {e}")
-        yield ("text", f"\n[Groq streaming error: {e}]")
+                # Text content
+                if hasattr(delta, "content") and delta.content:
+                    yield ("text", delta.content)
+
+                # Tool call deltas
+                if hasattr(delta, "tool_calls") and delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        if idx not in accumulated:
+                            accumulated[idx] = {"id": "", "name": "", "args": ""}
+                        if hasattr(tc, "id") and tc.id:
+                            accumulated[idx]["id"] = tc.id
+                        fn = getattr(tc, "function", None)
+                        if fn:
+                            if hasattr(fn, "name") and fn.name:
+                                accumulated[idx]["name"] = fn.name
+                            if hasattr(fn, "arguments") and fn.arguments:
+                                accumulated[idx]["args"] += fn.arguments
+        except Exception as e:
+            if "429" in str(e) or "rate_limit" in str(e).lower():
+                raise RuntimeError(f"RATE_LIMITED: {e}")
+            if _is_schema_error(e) and attempt < 2:
+                retry_needed = True
+            else:
+                yield ("text", f"\n[Groq streaming error: {e}]")
+                return
+
+        if not retry_needed:
+            break
+
+        # Ask the model to correct its tool arguments and try again
+        kwargs["messages"] = kwargs["messages"] + [
+            {"role": "user", "content": _SCHEMA_FIX_NOTE}
+        ]
 
     # Emit completed tool calls
     for idx in sorted(accumulated.keys()):

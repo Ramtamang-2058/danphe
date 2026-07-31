@@ -777,7 +777,7 @@ async def main():
         print("Usage:")
         print("  python social_media.py instagram <username> [--auto-reply] [--continuous]")
         print("                                              [--interval N] [--personality '<style>']")
-        print("                                              [--model gemini|nvidia|auto]")
+        print("                                              [--model groq|nvidia|auto]")
         print("  python social_media.py whatsapp  <contact>  [--auto-reply] [--personality '<style>']")
         print("")
         print("Examples:")
@@ -792,7 +792,7 @@ async def main():
     continuous = "--continuous" in sys.argv
     personality = ""
     interval = 45
-    model = "auto"  # gemini | nvidia | auto
+    model = "auto"  # groq | nvidia | auto
 
     if "--personality" in sys.argv:
         idx = sys.argv.index("--personality")
@@ -811,7 +811,7 @@ async def main():
         idx = sys.argv.index("--model")
         if idx + 1 < len(sys.argv):
             m = sys.argv[idx + 1].lower()
-            if m in ("groq", "gemini", "nvidia", "auto"):
+            if m in ("groq", "nvidia", "auto"):
                 model = m
             else:
                 print(f"  [warn] Unknown --model '{m}', using auto")
@@ -860,7 +860,7 @@ async def main():
                             import re as _re
                             delay = _re.search(r"retry in (\d+)", err_str)
                             wait = f" (retry in {delay.group(1)}s)" if delay else ""
-                            print(f"  [AI] Gemini quota exhausted{wait} — try again later or switch model")
+                            print(f"  [AI] Model quota exhausted{wait} — try again later or switch model")
                         else:
                             print(f"  [AI] Generation failed: {ai_err}")
                     print(f"{'─'*50}")

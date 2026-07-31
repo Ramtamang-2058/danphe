@@ -103,14 +103,24 @@ def thinking(label: str = "thinking", *, fps: int = 20):
 
 # ── Tool call display ──────────────────────────────────────────────────────────
 
-def show_tool(name: str, args: dict | None) -> None:
-    """Print a tool-call line: '  → read_file(path="api.py")'"""
+def _fmt_arg(key: str, value: object) -> str:
+    """Format one tool arg, truncating long values smartly (paths keep their tail)."""
+    s = str(value)
+    if len(s) <= 40:
+        body = repr(s)
+    elif "/" in s:
+        body = repr(f"…{s[-36:]}")
+    else:
+        body = repr(s[:37] + "…")
+    return f"[bold]{key}[/bold]=[dim]{body}[/dim]"
+
+
+def show_tool(name: str, args: dict | None, elapsed: float | None = None) -> None:
+    """Print a tool-call line: '  → read_file(path="api.py")  · 0.3s'"""
     args = args or {}
-    args_str = ", ".join(
-        f"[bold]{k}[/bold]=[dim]{repr(str(v))[:48]}[/dim]"
-        for k, v in args.items()
-    )
-    console.print(f"  [dim]→[/dim] [cyan]{name}[/cyan]({args_str})")
+    args_str = ", ".join(_fmt_arg(k, v) for k, v in args.items())
+    timing = f" [dim]· {elapsed:.1f}s[/dim]" if elapsed is not None else ""
+    console.print(f"  [dim]→[/dim] [cyan]{name}[/cyan]({args_str}){timing}")
 
 
 def show_result(result: str, ok: bool = True) -> None:
@@ -134,3 +144,10 @@ def stream_response(chunks) -> str:
         full += chunk
     console.print()
     return full
+
+
+# ── Per-turn footer ────────────────────────────────────────────────────────────
+
+def reply_footer(label: str, elapsed: float, tokens: int) -> None:
+    """Dim footer under a reply: model · elapsed · token estimate."""
+    console.print(f"  [dim]{label} · {elapsed:.1f}s · ~{tokens:,} tok[/dim]")

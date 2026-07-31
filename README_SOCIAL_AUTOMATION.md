@@ -68,7 +68,7 @@ python social_media.py instagram @your_friend --auto-reply
 |---------|--------|---------|
 | Read conversations | ✅ | Full history scrolling |
 | Context understanding | ✅ | Smart conversation analysis |
-| LLM integration | ✅ | NVIDIA NIM + Gemini fallback |
+| LLM integration | ✅ | NVIDIA NIM + Groq |
 | Personality system | ✅ | 7 presets + custom |
 | Instagram automation | ✅ | DM reading & replying |
 | WhatsApp automation | ✅ | Web reading & replying |
@@ -157,7 +157,7 @@ User runs: python social_media.py instagram @friend --auto-reply
         Build ConversationContext from chat
                           ↓
     Danphe router picks optimal LLM model
-        (NVIDIA GLM-4.7, DeepSeek, or Gemini)
+        (NVIDIA GLM-4.7, DeepSeek, or Groq)
                           ↓
     Generate intelligent reply with personality
         (considers full conversation context)
@@ -174,8 +174,8 @@ User runs: python social_media.py instagram @friend --auto-reply
 ### Environment Variables
 ```bash
 NVIDIA_API_KEY=your_key_here          # For NVIDIA models (recommended)
-GEMINI_API_KEY=your_fallback_key      # Fallback LLM
-DANPHE_MODEL=long                     # Model: fast|long|reasoning|gemini
+GROQ_API_KEY=gsk_your_key             # Fast path for small conversations
+DANPHE_MODEL=long                     # Model: fast|long|reasoning|groq
 DANPHE_DEBUG=1                        # Verbose logging
 ```
 
@@ -282,20 +282,22 @@ System automatically picks the best model:
 ```
 Conversation size: ~150 tokens?
     ↓
-< 6K tokens   → GLM-4.7 (fastest, tool-calling) ⚡
+< 12K tokens  → Groq Llama-3.3-70b (fastest, tool-calling) ⚡
+< 6K tokens   → GLM-4.7 (fast, tool-calling) ⚡
 < 60K tokens  → DeepSeek V3 (best for context) 🔥
 > 60K tokens  → Nemotron (heavy reasoning) 🧠
 
-No NVIDIA API key?
+No API keys?
     ↓
-Use Google Gemini Flash ☁️
+Devloop bridge (local) 
 ```
 
 You can override:
 ```bash
 DANPHE_MODEL=fast       # Force GLM-4.7
 DANPHE_MODEL=reasoning  # Force Nemotron
-DANPHE_MODEL=gemini     # Force Gemini
+DANPHE_MODEL=groq       # Force Groq
+DANPHE_MODEL=auto       # Back to auto-routing
 ```
 
 ---
@@ -315,7 +317,7 @@ DANPHE_MODEL=gemini     # Force Gemini
 ## ❓ FAQ
 
 **Q: Do I need NVIDIA API key?**
-A: Recommended but not required. Gemini (free tier) works as fallback.
+A: Recommended but not required. Groq handles small conversations; devloop is the local fallback.
 
 **Q: Does it work on mobile?**
 A: No, requires desktop browser with Playwright support (Firefox/Chrome).
@@ -351,7 +353,7 @@ For questions, check:
 
 ---
 
-**Built with**: Python 3.11+, Danphe, NVIDIA NIM, Gemini, Playwright
+**Built with**: Python 3.11+, Danphe, NVIDIA NIM, Groq, Playwright
 **Date**: May 4, 2026
 **Status**: ✅ Production Ready
 

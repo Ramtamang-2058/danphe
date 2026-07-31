@@ -12,9 +12,9 @@ from danphe.config import NVIDIA_API_KEY, MAX_TOKENS, DEBUG
 from danphe.llm.retry import with_backoff
 
 MODELS = {
-    "fast":      "z-ai/glm4.7",                      # GLM-4.7: agentic, tool-calling, thinking
-    "long":      "deepseek-ai/deepseek-v3-0324",      # DeepSeek V3: 1M ctx, coding
-    "reasoning": "nvidia/nemotron-3-super-120b-a12b", # Nemotron: heavy reasoning
+    "fast":      "z-ai/glm-5.2",                      # GLM-5.2: agentic, tool-calling, thinking
+    "long":      "deepseek-ai/deepseek-v4-flash",      # DeepSeek V4 Flash: long ctx, coding
+    "reasoning": "nvidia/nemotron-3-super-120b-a12b",  # Nemotron: heavy reasoning
 }
 
 _client: OpenAI | None = None

@@ -192,7 +192,7 @@ def execute(name: str, args: dict[str, Any]) -> str:
         if name == "write_file":
             return _write(args["path"], args["content"])
         if name == "run_bash":
-            return _bash(args["command"], int(args.get("timeout", 30)))
+            return _bash(args["command"], _coerce_timeout(args.get("timeout", 30)))
         if name == "list_files":
             return _ls(args.get("path", "."), args.get("pattern"))
         if name == "search_code":
@@ -265,6 +265,16 @@ def _write(path: str, content: str) -> str:
         return f"Error: OS error writing to {path}: {e}"
     except Exception as e:
         return f"Error: failed to write {path}: {e}"
+
+
+def _coerce_timeout(value) -> int:
+    """Accept timeout as int or numeric string ('60', '60s'); default 30."""
+    if value is None:
+        return 30
+    try:
+        return int(str(value).replace("s", "").strip())
+    except (TypeError, ValueError):
+        return 30
 
 
 def _bash(command: str, timeout: int = 30) -> str:

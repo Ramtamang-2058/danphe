@@ -1,7 +1,7 @@
 """
 social_agent.py — LLM-powered social media automation.
 Reads conversations, understands context, generates intelligent replies.
-Routes through Danphe's model selection (NVIDIA/Gemini).
+Routes through Danphe's model selection (Groq/NVIDIA).
 """
 from __future__ import annotations
 from typing import Any
@@ -91,8 +91,8 @@ class ReplyGenerator:
         ]
         return "\n".join(lines)
 
-    # Class-level model preference — set via ReplyGenerator(model="groq"|"nvidia"|"gemini"|"auto")
-    SUPPORTED_MODELS = ("auto", "groq", "gemini", "nvidia")
+    # Class-level model preference — set via ReplyGenerator(model="groq"|"nvidia"|"auto")
+    SUPPORTED_MODELS = ("auto", "groq", "nvidia")
 
     def __init__(self, personality: str = "", system_prompt: str = "", model: str = "auto"):
         if personality:
@@ -102,9 +102,6 @@ class ReplyGenerator:
             self.personality = self.DEFAULT_PERSONALITY
         self.system_prompt = system_prompt
         self.model = model if model in self.SUPPORTED_MODELS else "auto"
-
-    # Use the lite model for social replies — 30× more free quota than flash
-    GEMINI_SOCIAL_MODEL = "gemini-2.0-flash-lite"
 
     def _call_groq(self, messages: list[dict], system: str, stream: bool):
         """Try Groq Llama 3.3. Returns text or stream."""
@@ -116,22 +113,6 @@ class ReplyGenerator:
         except Exception as e:
             if "429" in str(e) or "RATE_LIMITED" in str(e).upper():
                 raise RuntimeError(f"RATE_LIMITED: {e}")
-            raise
-
-    def _call_gemini(self, messages: list[dict], system: str, stream: bool):
-        """Try Gemini Flash Lite. Raises on 429 as RuntimeError('RATE_LIMITED ...')."""
-        from danphe.llm import gemini
-        try:
-            if stream:
-                return gemini.stream(messages, system=system, model=self.GEMINI_SOCIAL_MODEL, max_tokens=300)
-            return gemini.complete(messages, system=system, model=self.GEMINI_SOCIAL_MODEL, max_tokens=300)
-        except Exception as e:
-            err = str(e)
-            if "429" in err or "RESOURCE_EXHAUSTED" in err:
-                import re as _re
-                delay = _re.search(r"retry in (\d+)", err)
-                wait = f" (retry in {delay.group(1)}s)" if delay else ""
-                raise RuntimeError(f"RATE_LIMITED{wait}") from e
             raise
 
     def _call_nvidia(self, messages: list[dict], system: str, stream: bool):
@@ -152,8 +133,8 @@ class ReplyGenerator:
     ) -> str:
         """
         Generate a reply.
-        model="auto"   → Gemini first, NVIDIA fast as fallback
-        model="gemini" → Gemini only
+        model="auto"   → Groq first, NVIDIA fast as fallback
+        model="groq"   → Groq only
         model="nvidia" → NVIDIA fast only
         """
         if not context.messages:
@@ -178,10 +159,7 @@ class ReplyGenerator:
         if self.model == "nvidia":
             return self._call_nvidia(messages, system, stream)
 
-        if self.model == "gemini":
-            return self._call_gemini(messages, system, stream)
-
-        # auto: Groq -> Gemini -> NVIDIA
+        # auto: Groq -> NVIDIA
         from danphe import config as _cfg
         if _cfg.GROQ_API_KEY:
             try:
@@ -193,16 +171,6 @@ class ReplyGenerator:
                     raise
             except Exception as e:
                 print(f"  [groq] failed: {e} — falling back")
-
-        try:
-            return self._call_gemini(messages, system, stream)
-        except RuntimeError as e:
-            if "RATE_LIMITED" in str(e):
-                print(f"  [gemini] {e} — falling back to NVIDIA fast")
-            else:
-                raise
-        except Exception as e:
-            print(f"  [gemini] failed: {e} — falling back to NVIDIA fast")
 
         try:
             return self._call_nvidia(messages, system, stream)
