@@ -8,6 +8,10 @@ import uuid
 from typing import Iterator
 
 from danphe.config import GROQ_API_KEY, MAX_TOKENS, DEBUG
+from danphe.llm.retry import with_backoff
+
+# Groq on_demand tier counts output tokens against the per-minute budget.
+MAX_OUTPUT = 6144
 
 _client = None
 
@@ -46,8 +50,8 @@ def stream_with_tools(
     kwargs: dict = dict(
         model=model,
         messages=all_messages,
-        temperature=1,
-        max_tokens=MAX_TOKENS,
+        temperature=0.3,
+        max_tokens=min(MAX_TOKENS, MAX_OUTPUT),
         stream=True,
     )
     if tools:
@@ -59,7 +63,7 @@ def stream_with_tools(
         print(f"[danphe debug] groq model={model} tools={bool(tools)}")
 
     try:
-        completion = client.chat.completions.create(**kwargs)
+        completion = with_backoff(lambda: client.chat.completions.create(**kwargs))
     except Exception as e:
         if "429" in str(e) or "rate_limit" in str(e).lower():
             raise RuntimeError(f"RATE_LIMITED: {e}")
@@ -104,7 +108,7 @@ def stream_with_tools(
             args = json.loads(tc["args"]) if tc["args"].strip() else {}
         except json.JSONDecodeError:
             args = {"_raw": tc["args"]}
-        yield ("tool_call", {"id": tc["id"] or str(uuid.uuid4()), "name": tc["name"], "args": args})
+        yield ("tool_call", {"id": tc["id"] or str(uuid.uuid4()), "name": tc["name"], "args": args or {}})
 
 
 def stream(
@@ -120,13 +124,13 @@ def stream(
     kwargs = dict(
         model=model,
         messages=all_messages,
-        temperature=1,
-        max_tokens=max_tokens or MAX_TOKENS,
+        temperature=0.7,
+        max_tokens=min(max_tokens or MAX_TOKENS, MAX_OUTPUT),
         stream=True,
     )
     
     try:
-        completion = client.chat.completions.create(**kwargs)
+        completion = with_backoff(lambda: client.chat.completions.create(**kwargs))
         for chunk in completion:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content

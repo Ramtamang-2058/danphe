@@ -9,6 +9,7 @@ from typing import Iterator
 from openai import OpenAI
 
 from danphe.config import NVIDIA_API_KEY, MAX_TOKENS, DEBUG
+from danphe.llm.retry import with_backoff
 
 MODELS = {
     "fast":      "z-ai/glm4.7",                      # GLM-4.7: agentic, tool-calling, thinking
@@ -75,7 +76,7 @@ def stream(
     kwargs: dict = dict(
         model=model,
         messages=all_messages,
-        temperature=1,
+        temperature=0.7,
         top_p=1,
         max_tokens=MAX_TOKENS,
         stream=True,
@@ -84,7 +85,7 @@ def stream(
     if thinking_body:
         kwargs["extra_body"] = thinking_body
 
-    completion = client.chat.completions.create(**kwargs)
+    completion = with_backoff(lambda: client.chat.completions.create(**kwargs))
 
     try:
         for chunk in completion:
@@ -150,7 +151,7 @@ def stream_with_tools(
     kwargs: dict = dict(
         model=model,
         messages=all_messages,
-        temperature=1,
+        temperature=0.3,
         top_p=1,
         max_tokens=MAX_TOKENS,
         stream=True,
@@ -166,7 +167,7 @@ def stream_with_tools(
 
     # Try with tools; on failure fall back to plain stream
     try:
-        completion = client.chat.completions.create(**kwargs)
+        completion = with_backoff(lambda: client.chat.completions.create(**kwargs))
     except Exception as e:
         err = str(e).lower()
         if tools and ("tool" in err or "function" in err or "unsupported" in err):
@@ -176,7 +177,7 @@ def stream_with_tools(
             thinking_body = _thinking_body(model_tier)
             if thinking_body:
                 kwargs["extra_body"] = thinking_body
-            completion = client.chat.completions.create(**kwargs)
+            completion = with_backoff(lambda: client.chat.completions.create(**kwargs))
         else:
             raise
 
@@ -232,4 +233,4 @@ def stream_with_tools(
             args = json.loads(tc["args"]) if tc["args"].strip() else {}
         except json.JSONDecodeError:
             args = {"_raw": tc["args"]}
-        yield ("tool_call", {"id": tc["id"], "name": tc["name"], "args": args})
+        yield ("tool_call", {"id": tc["id"], "name": tc["name"], "args": args or {}})

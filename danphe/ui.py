@@ -103,8 +103,9 @@ def thinking(label: str = "thinking", *, fps: int = 20):
 
 # ── Tool call display ──────────────────────────────────────────────────────────
 
-def show_tool(name: str, args: dict) -> None:
+def show_tool(name: str, args: dict | None) -> None:
     """Print a tool-call line: '  → read_file(path="api.py")'"""
+    args = args or {}
     args_str = ", ".join(
         f"[bold]{k}[/bold]=[dim]{repr(str(v))[:48]}[/dim]"
         for k, v in args.items()

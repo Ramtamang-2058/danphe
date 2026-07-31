@@ -8,6 +8,7 @@ import uuid
 from typing import Iterator
 
 from danphe.config import GEMINI_API_KEY, MAX_TOKENS, DEBUG
+from danphe.llm.retry import with_backoff
 
 _client = None
 
@@ -144,6 +145,7 @@ def stream_with_tools(
         system_instruction=system or None,
         tools=gemini_tools,
         max_output_tokens=MAX_TOKENS,
+        temperature=0.3 if tools else 0.7,
     )
 
     if DEBUG:
@@ -156,10 +158,10 @@ def stream_with_tools(
     )
 
     try:
-        response = chat.send_message_stream(last_user or " ")
+        response = with_backoff(lambda: chat.send_message_stream(last_user or " "))
     except Exception as e:
         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-            raise  # Let the caller handle rate limits
+            raise  # Let the caller handle rate limits after retries
         yield ("text", f"\n[Gemini setup error: {e}]")
         return
 

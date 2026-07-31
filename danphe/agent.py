@@ -82,11 +82,10 @@ def run(
 
     Resilient to network errors — tool results are persisted even if streaming fails.
     """
-    from danphe.llm import nvidia, gemini as gm
+    from danphe.llm import nvidia, gemini as gm, groq
 
     cwd = cwd or Path.cwd()
     system = _build_system(cwd)
-    backend, tier = router.pick(messages)
     final_text = ""
 
     for iteration in range(max_iter):
@@ -94,11 +93,18 @@ def run(
         text_this_turn = ""
 
         # ── Stream response ────────────────────────────────────────────────────
+        backend, tier = router.pick(messages)
         try:
             if backend == "nvidia":
                 events = nvidia.stream_with_tools(
                     messages,
                     model_tier=tier,
+                    system=system,
+                    tools=tool_lib.SCHEMAS,
+                )
+            elif backend == "groq":
+                events = groq.stream_with_tools(
+                    messages,
                     system=system,
                     tools=tool_lib.SCHEMAS,
                 )
@@ -206,7 +212,7 @@ def stream_ask(
     """
     Single-turn Q&A (no tool loop). Yields text chunks for streaming display.
     """
-    from danphe.llm import nvidia, gemini as gm
+    from danphe.llm import nvidia, gemini as gm, groq
     from tools.file_tool import read_files  # existing helper
 
     cwd = cwd or Path.cwd()
@@ -222,6 +228,10 @@ def stream_ask(
 
     if backend == "nvidia":
         for kind, data in nvidia.stream_with_tools(messages, model_tier=tier, system=system):
+            if kind == "text":
+                yield data
+    elif backend == "groq":
+        for kind, data in groq.stream_with_tools(messages, system=system, tools=tool_lib.SCHEMAS):
             if kind == "text":
                 yield data
     elif backend == "gemini":

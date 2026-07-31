@@ -111,6 +111,76 @@ SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "ipo_status",
+            "description": "MeroShare IPO setup status: vault, family members, browser session, application log.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ipo_login",
+            "description": "Open the MeroShare browser session and log in the first active family member. Prompts the user in the TERMINAL for the vault master password — pass no args, never ask for the password in chat.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ipo_check",
+            "description": "List IPOs currently available on MeroShare.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ipo_apply",
+            "description": "Fill the MeroShare application form for the current member for a given company/issue. The user then solves the CAPTCHA in the browser.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "company": {"type": "string", "description": "Company/issue name (or part of it)"},
+                    "scrip": {"type": "string", "description": "Scrip symbol"},
+                },
+                "required": ["company"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ipo_submit",
+            "description": "Submit the current member's application (after the user solved the CAPTCHA), log the result, and log in the next member.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ipo_close",
+            "description": "Close the MeroShare browser session and clear cached credentials.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
 ]
 
 
@@ -131,6 +201,24 @@ def execute(name: str, args: dict[str, Any]) -> str:
             return _list_skills()
         if name == "read_skill":
             return _read_skill(args["name"])
+        if name == "ipo_status":
+            from . import ipo as _ipo
+            return _ipo.status()
+        if name == "ipo_login":
+            from . import ipo as _ipo
+            return _ipo.login()
+        if name == "ipo_check":
+            from . import ipo as _ipo
+            return _ipo.check()
+        if name == "ipo_apply":
+            from . import ipo as _ipo
+            return _ipo.apply(args["company"], args.get("scrip", ""))
+        if name == "ipo_submit":
+            from . import ipo as _ipo
+            return _ipo.submit()
+        if name == "ipo_close":
+            from . import ipo as _ipo
+            return _ipo.close()
         return f"Unknown tool: {name}"
     except KeyError as e:
         return f"Missing required argument {e} for tool {name}"

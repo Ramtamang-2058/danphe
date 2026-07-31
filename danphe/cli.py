@@ -334,7 +334,7 @@ def _cmd_compact(session: list[dict], cwd: Path) -> None:
         console.print("[dim]Nothing to compact yet[/dim]")
         return
 
-    from danphe.llm import nvidia, gemini as gm
+    from danphe.llm import nvidia, gemini as gm, groq as gq
 
     summary_msgs = list(session) + [
         {"role": "user", "content": (
@@ -349,6 +349,8 @@ def _cmd_compact(session: list[dict], cwd: Path) -> None:
         backend, tier = router.pick(session)
         if backend == "nvidia":
             summary = nvidia.complete(summary_msgs, model_tier=tier)
+        elif backend == "groq":
+            summary = gq.complete(summary_msgs)
         else:
             user_msgs = [m for m in summary_msgs if m.get("role") != "system"]
             summary = gm.complete(user_msgs)
