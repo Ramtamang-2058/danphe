@@ -181,6 +181,145 @@ SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_open",
+            "description": "Start a generic browser session (persistent Firefox). Use this before any browser_* tool.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_go",
+            "description": "Navigate the browser to a URL and return the page title and a short text preview.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to visit (http/https added if missing)"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_text",
+            "description": "Copy all visible text of the current page.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_copy",
+            "description": "Copy text from an element matching a CSS selector (e.g. 'h1', '#price', 'text=Login').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector or playwright text= selector"},
+                },
+                "required": ["selector"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_type",
+            "description": "Type text into a form field matching a selector (clears existing text first).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector of the input field"},
+                    "text": {"type": "string", "description": "Text to type into the field"},
+                },
+                "required": ["selector", "text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_click",
+            "description": "Click the first element matching a selector.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector or text= selector of the element to click"},
+                },
+                "required": ["selector"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_press",
+            "description": "Press a keyboard key in the active page (Enter, Tab, Escape, Backspace, etc.).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Key name to press, e.g. 'Enter', 'Tab', 'Escape'"},
+                },
+                "required": ["key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_screenshot",
+            "description": "Save a PNG screenshot of the current page and return its file path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Optional filename prefix for the screenshot"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_back",
+            "description": "Go back one page in browser history.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_status",
+            "description": "Show browser session state: open/closed, current URL and title.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_close",
+            "description": "Close the browser session.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
 ]
 
 
@@ -219,6 +358,39 @@ def execute(name: str, args: dict[str, Any]) -> str:
         if name == "ipo_close":
             from . import ipo as _ipo
             return _ipo.close()
+        if name == "browser_open":
+            from . import browser as _br
+            return _br.open()
+        if name == "browser_go":
+            from . import browser as _br
+            return _br.go(args["url"])
+        if name == "browser_text":
+            from . import browser as _br
+            return _br.text()
+        if name == "browser_copy":
+            from . import browser as _br
+            return _br.copy(args["selector"])
+        if name == "browser_type":
+            from . import browser as _br
+            return _br.type_text(args["selector"], args["text"])
+        if name == "browser_click":
+            from . import browser as _br
+            return _br.click(args["selector"])
+        if name == "browser_press":
+            from . import browser as _br
+            return _br.press(args["key"])
+        if name == "browser_screenshot":
+            from . import browser as _br
+            return _br.screenshot(args.get("name", ""))
+        if name == "browser_back":
+            from . import browser as _br
+            return _br.back()
+        if name == "browser_status":
+            from . import browser as _br
+            return _br.status()
+        if name == "browser_close":
+            from . import browser as _br
+            return _br.close()
         return f"Unknown tool: {name}"
     except KeyError as e:
         return f"Missing required argument {e} for tool {name}"

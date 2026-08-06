@@ -4,6 +4,7 @@ cli.py — danphe interactive REPL + Click entry point.
   danphe                     # interactive REPL (default)
   danphe ask "question"      # single Q&A, streamed
   danphe run "task"          # agentic task
+  danphe do "task"           # Claude browser bridge (no API tokens — survives quota)
   danphe social instagram @user --auto-reply  # social media automation
   danphe models              # show model routing
 
@@ -140,7 +141,7 @@ def _resolve_at_files(text: str) -> tuple[str, str]:
 
 # ── Agent runner with animated display ────────────────────────────────────────
 
-def _run_agent(user_input: str, session: list[dict], cwd: Path, label: str = "") -> str:
+def _run_agent(user_input: str, session: list[dict], cwd: Path, label: str = "", max_iter: int = 10) -> str:
     """
     Send user_input through the agent loop.
     Shows mist animation while thinking, streams text as it arrives,
@@ -159,7 +160,7 @@ def _run_agent(user_input: str, session: list[dict], cwd: Path, label: str = "")
 
     def _agent_thread() -> None:
         try:
-            agent.run(session, cwd=cwd, on_text=on_text, on_tool=on_tool)
+            agent.run(session, cwd=cwd, on_text=on_text, on_tool=on_tool, max_iter=max_iter)
         except Exception as e:
             q.put(("error", str(e)))
         finally:
@@ -287,7 +288,9 @@ def _cmd_help() -> None:
             "  [cyan]/exit[/cyan]          Exit (also Ctrl+D)\n\n"
             "[bold]Available tools[/bold]\n"
             "  [cyan]read_file, write_file, run_bash, list_files, search_code[/cyan]\n"
-            "  [cyan]list_skills, read_skill[/cyan] (for accessing skill knowledge base)\n\n"
+            "  [cyan]list_skills, read_skill[/cyan] (for accessing skill knowledge base)\n"
+            "  [cyan]browser_*[/cyan] (open/go/text/copy/type/click/press/screenshot/back/status/close)\n"
+            "  [cyan]ipo_*[/cyan] (status/login/check/apply/submit/close — MeroShare)\n\n"
             "[bold]Input tricks[/bold]\n"
             "  [cyan]@file.py[/cyan]       Inline file contents in your message\n"
             "  [cyan]Esc+Enter[/cyan]      Insert a newline (multi-line input)\n"
@@ -714,11 +717,53 @@ def run(task: tuple[str, ...], files: tuple[str, ...], max_iter: int) -> None:
     label = router.describe(*router.pick(session))
     console.print(f"\n  [dim]{label}[/dim]")
     t0 = time.time()
-    _run_agent(t, session, cwd)
+    _run_agent(t, session, cwd, max_iter=max_iter)
     elapsed = time.time() - t0
     last = session[-1] if session else {}
     if last.get("role") == "assistant" and isinstance(last.get("content"), str):
         ui.reply_footer(label, elapsed, max(1, len(last["content"]) // 4))
+
+
+@main.command()
+@click.argument("task", nargs=-1, required=True)
+@click.option("-f", "--file", "files", multiple=True, help="Attach file(s)")
+def do(task: tuple[str, ...], files: tuple[str, ...]) -> None:
+    """Run via the Claude browser bridge (devloop) — no API tokens needed.
+
+    Use this when API keys are exhausted / rate-limited. Opens Brave,
+    asks Claude in the browser, and streams the answer.
+    """
+    import subprocess
+
+    q = " ".join(task)
+    console.print(
+        Panel(
+            "[bold]Browser bridge[/bold] — [cyan]Claude via Brave[/cyan], no API tokens used\n"
+            f"[dim]This keeps working even when Groq/NVIDIA quota is exhausted.[/dim]",
+            border_style="cyan",
+        )
+    )
+
+    cmd = ["devloop", "ask", q]
+    if files:
+        cmd += ["-f", *files]
+
+    t0 = time.time()
+    console.print()
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in proc.stdout:
+            console.print(line, end="", markup=False, highlight=False)
+        proc.wait()
+    except FileNotFoundError:
+        console.print("[red]devloop not found. Install it: bash claude-automate/install.sh[/red]")
+        return
+    except KeyboardInterrupt:
+        console.print("\n[dim]Interrupted.[/dim]")
+        proc.terminate()
+        return
+    elapsed = time.time() - t0
+    console.print(f"\n[dim]devloop · {elapsed:.1f}s · browser bridge[/dim]\n")
 
 
 @main.command()
